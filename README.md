@@ -39,11 +39,13 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
 
 ### Communication Model:
 - The core idea of this project is to construct resilient networks of communicating agents, allowing for robust situational awareness and decision-making.
-- 
+- There are two main types of communication in this project: inter-agent and global.
+    - Inter-agent communication is learned and meant to aid in collaboration between agents.
+    - Global communication: these are deterministic reports that are published by agents to SMART, which is a global situational awareness layer that compiles all info collected by the swarm.
 
 
 ### Swarm-based Multi-agent Awareness & Real-time Tracking (SMART):
-- This is a situational awareness map that is contributed to and updated by the individual agents.
+- This is a situational awareness layer that is contributed to and updated by the individual agents.
 - Essentially this acts as a global tracker of state, and also could be visualized for human operators.
 - Each swarm gets its own SMART, it will contain info like friendly asset locations & health, enemy asset locations & health, flag capture statuses, etc.
 
@@ -67,8 +69,15 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
 
 Three different statuses for the swarm
 - Green: move forward and capture the points (assumed safe env.)
-- Yellow: scouting, move forward cautiously. Purpose is to gain situational awareness. If engaged, transition to red/green (dependent on spec).
+- Yellow: scouting, move forward cautiously. Purpose is to gain situational awareness. If engaged, transition to red/green (dependent on specification from human operator).
 - Red: capture points, destroy all enemy assets
+- **Training Note:** Encode different reward schemes + capability restrictions for each method.
 
-Questions:
-- How to figure out what an enemy asset is? They also need to have three statuses (red, yellow, green).
+Improvements for future iterations:
+- Having different dispositions for entities, e.g. red (enemy), yellow (unknown), or green (friendly)
+    - Determining these dispositions gets into keeping records for past actions done by entities (e.g. movements or engagements with friendly assets) to determine intent!
+- (Pretty feasible) Making a UI interface for SMART:
+    - Goal-setting capabilities (setting flags/capture points on a map)
+    - Status-setting for the swarm (red, yellow, green)
+    - Real-time alerts bar denoting: flag captures, engagements, friendly entity statuses, etc.
+
