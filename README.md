@@ -5,12 +5,19 @@ Experimenting with MARL techniques and multi-domain autonomy
 This is going to be a project exploring swarm autonomy. The initial idea I have is to implement a capture-the-flag type of scenario, with two teams working against each other. Each team will consist of multiple agents, each communicating with each other. These agents will be heterogeneous -- at the moment, I am aiming to have two kinds of agents, air and land. The following spec details the expected deliverables/capabilities of this project.
 
 
-Environment
+### Environment
 - For feasibility (my current compute resources are an M3 Mac and Colab Pro subscription), I will implement a grid-based 2D environment with an attached height map (this will be randomly generated).
 - 2D environment size will be fairly big (4096 x 4096 to start)
 
 
-Agent Specs:
+### Observation Space
+
+
+### Action Space
+
+
+
+### Agent Specs:
 - Ground agent: An autonomous ground vehicle, with fast flag capture and cUAS deployment capability.
     - Mobility per sec: 3 tiles
     - Observation Capability: 20 tiles in all directions, or as determined by height map.
@@ -28,14 +35,35 @@ Agent Specs:
 
 **Communication capabilities detailed below.**
 
-Swarm-based Multi-agent Awareness & Real-time Tracking (SMART):
+
+
+### Communication Model:
+- The core idea of this project is to construct resilient networks of communicating agents, allowing for robust situational awareness and decision-making.
+- 
+
+
+### Swarm-based Multi-agent Awareness & Real-time Tracking (SMART):
 - This is a situational awareness map that is contributed to and updated by the individual agents.
 - Essentially this acts as a global tracker of state, and also could be visualized for human operators.
 - Each swarm gets its own SMART, it will contain info like friendly asset locations & health, enemy asset locations & health, flag capture statuses, etc.
 
 
-Communication Model:
-- 
+### Policy network design
+- Good mental model for the observation space of each agent:
+    - 2D grid inputs: terrain -- handled by CNN
+    - Entity inputs: entities (e.g. flags, agents) -- handled by GNN
+    - Internal State Vectors: Goal, Health -- handled by MLP
+    - Inter-agent Vectors: Learned communication between agents, handled by MLP
+- Sourcing of info for different inputs
+    - 2D grid inputs: from environment (ground-truth)
+    - Entity inputs: **within range** from env (ground-truth), **outside range** from SMART
+    - Internal State Vectors: **agent health** from env (ground-truth), **goal** from SMART
+    - Inter-agent Vectors: Communicated between agents
+- Then combine the resulting embeddings and input to MLP, which ouptuts comms and actions.
+- There are two kinds of comms:
+    - Inter-agent comms (learned)
+    - SMART comms (deterministic) -- these are structured reports published to SMART
+
 
 Three different statuses for the swarm
 - Green: move forward and capture the points (assumed safe env.)
