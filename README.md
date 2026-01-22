@@ -23,14 +23,14 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
     - Observation Capability: 20 tiles in all directions, or as determined by height map.
     - Health: 200 points
     - Attack: 50 points, ground-only, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
-    - Flag capture speed: 10% per second
+    - Flag capture speed: 20% per second
     - Communication: 
     - Can deploy counter-UAS systems (takes 10 secs). These will be able to take out air assets within a certain radius with 75% probability.
 - Air agent: Drone with fast mobility and heightened visibility. Slower flag capture and lower health.
     - Mobility per sec: 10 tiles
-    - Observation Capability: 20 tiles in all directions, or as determined by height map.
-    - Health: 200 points
-    - Attack: 50 points, ground-only, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
+    - Observation Capability: 100 tiles in all directions
+    - Health: 100 points
+    - Attack: 25 points, attempted twice per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
     - Flag capture speed: 10% per second
 
 **Communication capabilities detailed below.**
