@@ -1,2 +1,46 @@
 # MultiDomain-MARLSim
 Experimenting with MARL techniques and multi-domain autonomy
+
+
+This is going to be a project exploring swarm autonomy. The initial idea I have is to implement a capture-the-flag type of scenario, with two teams working against each other. Each team will consist of multiple agents, each communicating with each other. These agents will be heterogeneous -- at the moment, I am aiming to have two kinds of agents, air and land. The following spec details the expected deliverables/capabilities of this project.
+
+
+Environment
+- For feasibility (my current compute resources are an M3 Mac and Colab Pro subscription), I will implement a grid-based 2D environment with an attached height map (this will be randomly generated).
+- 2D environment size will be fairly big (4096 x 4096 to start)
+
+
+Agent Specs:
+- Ground agent: An autonomous ground vehicle, with fast flag capture and cUAS deployment capability.
+    - Mobility per sec: 3 tiles
+    - Observation Capability: 20 tiles in all directions, or as determined by height map.
+    - Health: 200 points
+    - Attack: 50 points, ground-only, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
+    - Flag capture speed: 10% per second
+    - Communication: 
+    - Can deploy counter-UAS systems (takes 10 secs). These will be able to take out air assets within a certain radius with 75% probability.
+- Air agent: Drone with fast mobility and heightened visibility. Slower flag capture and lower health.
+    - Mobility per sec: 10 tiles
+    - Observation Capability: 20 tiles in all directions, or as determined by height map.
+    - Health: 200 points
+    - Attack: 50 points, ground-only, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
+    - Flag capture speed: 10% per second
+
+**Communication capabilities detailed below.**
+
+Swarm-based Multi-agent Awareness & Real-time Tracking (SMART):
+- This is a situational awareness map that is contributed to and updated by the individual agents.
+- Essentially this acts as a global tracker of state, and also could be visualized for human operators.
+- Each swarm gets its own SMART, it will contain info like friendly asset locations & health, enemy asset locations & health, flag capture statuses, etc.
+
+
+Communication Model:
+- 
+
+Three different statuses for the swarm
+- Green: move forward and capture the points (assumed safe env.)
+- Yellow: scouting, move forward cautiously. Purpose is to gain situational awareness. If engaged, transition to red/green (dependent on spec).
+- Red: capture points, destroy all enemy assets
+
+Questions:
+- How to figure out what an enemy asset is? They also need to have three statuses (red, yellow, green).
