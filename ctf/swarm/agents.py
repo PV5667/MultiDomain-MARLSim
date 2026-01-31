@@ -1,20 +1,25 @@
 """Defining the agent types, along with their action and observation spaces."""
 
 
-class AgentStatus:
-    """Internal State of the Agent"""
-    def __init__(self, x, y, z, health):
+class AgentState:
+    """
+    Internal State of the Agent
+    Allows for lightweight replay + communication.
+    """
+    def __init__(self, id, x, y, z, health):
+        self.id = id # this id is specific to the swarm
         self.x = x
         self.y = y
         self.z = z
         self.health = health
+        # will probably add more (e.g. scout mode, engage mode when working with rules-based behavior)
 
 class Agent:
-    def __init__(self):
+    def __init__(self, status: AgentState):
         self.observation_space = None
         self.action_space = None
         self.model = None
-        self.status = None
+        self.status = status
     def preprocess_obs(self):
         pass
     def get_action(self):
@@ -27,13 +32,13 @@ class Agent:
     def publish_smart(self):
         """Report to SMART"""
         pass
-
-
+    def update_health(increment):
+        # add validity checks
+        pass
     
 class GroundAgent(Agent):
-    def __init__(self, status: AgentStatus):
+    def __init__(self):
         super.__init__()
-        self.status = status
     def preprocess_obs(self):
         pass
     def get_action(self):

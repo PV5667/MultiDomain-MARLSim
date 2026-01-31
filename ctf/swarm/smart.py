@@ -1,5 +1,5 @@
 import numpy as np
-from agents import Agent, AgentStatus, GroundAgent, AirAgent
+from swarm.agents import Agent, AgentStatus, GroundAgent, AirAgent
 from enum import Enum
 
 class Disposition(Enum):
