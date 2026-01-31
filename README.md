@@ -25,12 +25,12 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
     - Attack: 50 points, ground-only, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
     - Flag capture speed: 20% per second
     - Communication: 
-    - Can deploy counter-UAS systems (takes 10 secs). These will be able to take out air assets within a certain radius with 75% probability.
+    - Can deploy counter-UAS systems (25 health) (takes 10 secs). These will be able to take out air assets within a certain radius with 75% probability.
 - Air agent: Drone with fast mobility and heightened visibility. Slower flag capture and lower health.
     - Mobility per sec: 10 tiles
     - Observation Capability: 100 tiles in all directions
     - Health: 100 points
-    - Attack: 25 points, attempted twice per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
+    - Attack: 25 points, attempted once per second. Attempt success determined by P(success), and damage is scaled based on stochastic damage distribution (between [0, 1], skewed to 1).
     - Flag capture speed: 10% per second
 
 **Communication capabilities detailed below.**
@@ -81,3 +81,7 @@ Improvements for future iterations:
     - Status-setting for the swarm (red, yellow, green)
     - Real-time alerts bar denoting: flag captures, engagements, friendly entity statuses, etc.
 
+Overall Autonomy Stack:
+- SMART is the high-level mission planner which also serves as the human interface.
+- SMART provides objectives/statuses to Behavior Trees, which act as control flow and safety guards (e.g. limiting certain actions, forced retreat if health low, setting agent objectives/modes, etc.)
+- Learned Policies are conditioned on observations, comms, and objectives, mainly focused on movement, engagement tactics, inter-agent comms, etc.
