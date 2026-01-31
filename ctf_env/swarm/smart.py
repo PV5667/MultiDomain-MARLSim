@@ -42,6 +42,8 @@ class SMART:
     Events: Dictionary based on timestamp
     Events PQ: TODO priority queue for events
     Spatial Index: TODO some kind of spatial index, has both events and entities.
+
+    Note: SMART is a *swarm-specific* model that acts as a global information repository. It is updated as agents observe entities and events.
     """
     def __init__(self):
         self.entities = {}
@@ -52,3 +54,12 @@ class SMART:
     def publish(self, agt: Agent, tick: int):
         # basically look at the position of the agent, along with tick, and output info accordingly
         pass
+
+    def add_entity(self, entity: Entity):
+        # observation-oriented
+        pass
+
+    def add_event(self, event: Event):
+        # action-oriented
+        pass
+

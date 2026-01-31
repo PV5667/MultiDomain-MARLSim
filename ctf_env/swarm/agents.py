@@ -18,8 +18,10 @@ class Agent:
     def preprocess_obs(self):
         pass
     def get_action(self):
+        # call to the model
         pass
     def query_smart(self):
+        # call to SMART to get relevant info
         """Query SMART given state"""
         pass
     def publish_smart(self):
