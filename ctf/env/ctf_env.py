@@ -14,7 +14,7 @@ class CTFEnv:
         self.n_flags = n_flags
         self.swarms = []
         self.seed_range = seed_range # range of seeds to sample
-        self.seed = None
+        self.curr_seed = None
 
         # initalize the terrain
         print("Generating heightmaps...")
@@ -39,8 +39,8 @@ class CTFEnv:
         self.environment = np.zeros((height, width, self.channels))
 
     def _agent_pos(self, swarm_id):
-        # generates list of random agent positions given heightmap and swarm id
 
+        # generates list of random agent positions given heightmap and swarm id
         # agent_pos: (agent_type, x, y)
         agent_pos = []
         # masking available parts of terrain (20% on left for swarm1, 20% on right for swarm2)
@@ -169,8 +169,7 @@ class CTFEnv:
         # calls _agent_pos and _flag_pos
         # updates self.environment with info
         rand_seed_idx = np.random.choice(np.arange(len(self.seed_range)))
-        self.seed = self.seed_range[rand_seed_idx]
-        np.random.seed(self.seed)
+        self.curr_seed = self.seed_range[rand_seed_idx]
         self.curr_heightmap = self.heightmaps[rand_seed_idx]
         self.gradient_map = compute_slope(self.curr_heightmap, sigma=9)
 
@@ -180,7 +179,7 @@ class CTFEnv:
         swarm2_agent_pos = self._agent_pos("swarm2")
         print("Getting Flag Positions")
         flag_pos = self._flag_pos()
-
+        
         # update self.environment (ground-truth array)
         self.environment[:, :, 0] = self.curr_heightmap
         for pos in swarm1_agent_pos:
@@ -211,6 +210,7 @@ class CTFEnv:
         return
 
     def reset(self):
+        np.random.seed()
         self.init_env()
 
 
