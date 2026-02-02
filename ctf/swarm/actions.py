@@ -9,6 +9,7 @@ class Action:
         self.action_type = action_type  # e.g., "move", "engage", "deploy"
         self.params = params  # params specific to action type
 
+    # probably doing action execution at the environment level
     def execute(self, agent, environment):
         # Logic to execute the action with the given agent within the environment
         # Update agent status
@@ -19,25 +20,15 @@ class Action:
 
 
 class MoveAction(Action):
-    def __init__(self, target_x, target_y):
-        super().__init__("move", {"target_x": target_x, "target_y": target_y})
-
-    def execute(self, agent, environment):
-        # Logic to move the agent to (target_x, target_y)
-        pass
-
+    def __init__(self, direction, magnitude):
+        self.direction = direction
+        self.magnitude = magnitude
+        
 class EngageAction(Action):
     def __init__(self, target_agent_id):
-        super().__init__("engage", {"target_agent_id": target_agent_id})
-
-    def execute(self, agent, environment):
-        # Logic to engage with the target agent
-        pass
+        self.target_agent_id = target_agent_id
 
 class DeployAction(Action):
-    def __init__(self, deploy_type, location):
-        super().__init__("deploy", {"deploy_type": deploy_type, "location": location})
-
-    def execute(self, agent, environment):
-        # Logic to deploy cUAS at specified location
-        pass
+    def __init__(self):
+        self.deploy_type = "cUAS" # for now, maybe have a counter-ground in the future?
+        # deploys one tile right in front of the agent

@@ -1,5 +1,5 @@
 import numpy as np
-from swarm.agents import Agent, AgentStatus, GroundAgent, AirAgent
+from ctf.swarm.agent import Agent, AgentStatus, GroundAgent, AirAgent
 from enum import Enum
 
 class Disposition(Enum):
@@ -12,9 +12,8 @@ class EventType(Enum):
     """TODO: Think more about the event types."""
     FLAG_CAPTURE = 1
     ENEMY_DISCOVERY = 2
-    FRIENDLY_ATTACK = 3 # Friendly attacks enemy
-    ENEMY_ATTACK = 4 # Enemy attacks friendly
-
+    FRIENDLY_ATTACK = 3 # Friendly attacks enemy (including self)
+    ENEMY_ATTACK = 4 # Enemy attacks friendly (this indicates damage dealt, not enemy id etc.) -- includes self
 
 class Entity:
     def __init__(self, id: str, type: Agent, disp: Disposition, status: AgentStatus):

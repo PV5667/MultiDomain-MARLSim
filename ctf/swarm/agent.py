@@ -1,4 +1,5 @@
 """Defining the agent types, along with their action and observation spaces."""
+from actions import Action, MoveAction, EngageAction, DeployAction
 
 
 class AgentState:
@@ -20,9 +21,17 @@ class Agent:
         self.action_space = None
         self.model = None
         self.status = status
-    def preprocess_obs(self):
+    def calculate_observation(self, env_patch):
+        # calculates the env. ground truth observation for the agent
         pass
-    def get_action(self):
+    def preprocess_obs(self, env_patch):
+        # basically packages inputs for the policy network
+        # grid inputs: calculate_observation
+        # smart inputs: query_smart
+        pass
+    def get_action(self, env_patch):
+        # env_patch is localized to the fixed area around the agent (patching done during swarm.step())
+        # call preprocess_obs
         # call to the model
         pass
     def query_smart(self):
@@ -39,9 +48,12 @@ class Agent:
 class GroundAgent(Agent):
     def __init__(self):
         super.__init__()
-    def preprocess_obs(self):
+    def calculate_observation(self, env_patch):
+        # this is ground, so need to do LoS calculations to determine what can/cannot be seen.
         pass
-    def get_action(self):
+    def preprocess_obs(self, env_patch):
+        pass
+    def get_action(self, env_patch):
         pass
     def query_smart(self):
         """Query SMART given state"""
@@ -53,9 +65,12 @@ class GroundAgent(Agent):
 class AirAgent(Agent):
     def __init__(self):
         super.__init__()
-    def preprocess_obs(self):
+    def calculate_observation(self, env_patch):
+        # this is air, so just return the fixed NxN patch around the air agent.
         pass
-    def get_action(self):
+    def preprocess_obs(self, env_patch):
+        pass
+    def get_action(self, env_patch):
         pass
     def query_smart(self):
         """Query SMART given state"""
@@ -63,5 +78,3 @@ class AirAgent(Agent):
     def publish_smart(self):
         """Report to SMART"""
         pass
-
-
