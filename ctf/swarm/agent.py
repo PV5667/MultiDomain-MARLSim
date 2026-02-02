@@ -1,8 +1,7 @@
 """Defining the agent types, along with their action and observation spaces."""
-from actions import Action, MoveAction, EngageAction, DeployAction
+from swarm.actions import Action, MoveAction, EngageAction, DeployAction, Direction
 
-
-class AgentState:
+class AgentStatus:
     """
     Internal State of the Agent
     Allows for lightweight replay + communication.
@@ -16,11 +15,11 @@ class AgentState:
         # will probably add more (e.g. scout mode, engage mode when working with rules-based behavior)
 
 class Agent:
-    def __init__(self, status: AgentState):
+    def __init__(self):
         self.observation_space = None
         self.action_space = None
         self.model = None
-        self.status = status
+        self.status = None
     def calculate_observation(self, env_patch):
         # calculates the env. ground truth observation for the agent
         pass
@@ -46,35 +45,25 @@ class Agent:
         pass
     
 class GroundAgent(Agent):
-    def __init__(self):
-        super.__init__()
+    def __init__(self, status: AgentStatus):
+        super().__init__()
+        self.status = status
     def calculate_observation(self, env_patch):
         # this is ground, so need to do LoS calculations to determine what can/cannot be seen.
         pass
     def preprocess_obs(self, env_patch):
         pass
     def get_action(self, env_patch):
-        pass
-    def query_smart(self):
-        """Query SMART given state"""
-        pass
-    def publish_smart(self):
-        """Report to SMART"""
-        pass
+        return MoveAction(self.status, Direction.NORTH, 3)
 
 class AirAgent(Agent):
-    def __init__(self):
-        super.__init__()
+    def __init__(self, status: AgentStatus):
+        super().__init__()
+        self.status = status
     def calculate_observation(self, env_patch):
         # this is air, so just return the fixed NxN patch around the air agent.
         pass
     def preprocess_obs(self, env_patch):
         pass
     def get_action(self, env_patch):
-        pass
-    def query_smart(self):
-        """Query SMART given state"""
-        pass
-    def publish_smart(self):
-        """Report to SMART"""
-        pass
+        return MoveAction(self.status, Direction.NORTH, 5)

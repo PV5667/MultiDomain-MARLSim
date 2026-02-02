@@ -1,5 +1,5 @@
 from swarm.smart import SMART, Entity
-from ctf.swarm.agent import GroundAgent, AirAgent
+from swarm.agent import GroundAgent, AirAgent, AgentStatus
 
 class Swarm:
     """
@@ -11,7 +11,6 @@ class Swarm:
     def __init__(self, agent_pos):
         self.agents = [] # list of Agent()
         self.smart = SMART()
-
         # init each of the agents in agent_pos
         # assign unique id to each agent
         self.n_ground_agents = 0
@@ -19,15 +18,25 @@ class Swarm:
         for pos in agent_pos:
             agent_type, x, y = pos
             if agent_type == "ground":
-                agt_id = f"ground_{self.n_ground_agents}"
-                agent = GroundAgent(agt_id, x, y)
+                agt_id = f"ground_{self.n_ground_agents + 1}"
+                status = AgentStatus(agt_id, x, y, 0, 100) # no z at the moment...
+                agent = GroundAgent(status)
                 self.n_ground_agents += 1
             else:
-                agt_id = f"air_{self.n_air_agents}"
-                agent = AirAgent(agt_id, x, y)
+                agt_id = f"air_{self.n_air_agents + 1}"
+                status = AgentStatus(agt_id, x, y, 0, 100) # no z at the moment...
+                agent = AirAgent(status)
                 self.n_air_agents += 1
             self.agents.append(agent)
 
-    def step(self):
-        # 
-        pass
+    def step(self, environment):
+        # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
+        actions = []
+        # iterate through all of the agents and get their actions
+        for i in range(len(self.agents)):
+            agent = self.agents[i]
+            # TODO get env_patch to pass to each agent
+            action = agent.get_action(None)
+            actions.append(action)
+        
+        return actions

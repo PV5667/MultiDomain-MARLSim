@@ -2,11 +2,22 @@
 Defining the actions that agents can take
 There are multiple kinds of actions, e.g. engage, move, deploy.
 """
+from enum import Enum
+
+class Direction(Enum):
+    """Relative to each swarm's overall direction. North = Forward."""
+    NORTH=1
+    NORTHEAST=2
+    EAST=3
+    SOUTHEAST=4
+    SOUTH=5
+    SOUTHWEST=6
+    WEST=7
+    NORTHWEST=8
 
 
 class Action:
-    def __init__(self, action_type, params):
-        self.action_type = action_type  # e.g., "move", "engage", "deploy"
+    def __init__(self, params):
         self.params = params  # params specific to action type
 
     # probably doing action execution at the environment level
@@ -20,13 +31,16 @@ class Action:
 
 
 class MoveAction(Action):
-    def __init__(self, direction, magnitude):
+    def __init__(self, agent_status, direction, magnitude):
+        self.agent_status = agent_status
         self.direction = direction
         self.magnitude = magnitude
         
 class EngageAction(Action):
-    def __init__(self, target_agent_id):
-        self.target_agent_id = target_agent_id
+    def __init__(self, agent_status, target_x, target_y):
+        self.agent_status = agent_status
+        self.target_x = target_x
+        self.target_y = target_y
 
 class DeployAction(Action):
     def __init__(self):

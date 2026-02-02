@@ -3,6 +3,7 @@
 import numpy as np
 from terrain import generate_heightmap, compute_slope
 from swarm.swarm import Swarm
+from swarm.actions import MoveAction, EngageAction, DeployAction, Direction
 
 class CTFEnv:
     def __init__(self, height, width, n_ground_agents, n_air_agents, n_flags, seed_range):
@@ -12,7 +13,8 @@ class CTFEnv:
         self.n_ground_agents = n_ground_agents
         self.n_air_agents = n_air_agents
         self.n_flags = n_flags
-        self.swarms = []
+        self.swarm1 = None
+        self.swarm2 = None
         self.seed_range = seed_range # range of seeds to sample
         self.curr_seed = None
 
@@ -37,6 +39,7 @@ class CTFEnv:
         (For now, more might be added)
         """
         self.environment = np.zeros((height, width, self.channels))
+        self.history = []
 
     def _agent_pos(self, swarm_id):
 
@@ -179,7 +182,7 @@ class CTFEnv:
         swarm2_agent_pos = self._agent_pos("swarm2")
         print("Getting Flag Positions")
         flag_pos = self._flag_pos()
-        
+
         # update self.environment (ground-truth array)
         self.environment[:, :, 0] = self.curr_heightmap
         for pos in swarm1_agent_pos:
@@ -204,29 +207,110 @@ class CTFEnv:
         # initialize swarm objects
         swarm1 = Swarm(swarm1_agent_pos)
         swarm2 = Swarm(swarm2_agent_pos)
-        self.swarms = [swarm1, swarm2]
+        self.swarm1 = swarm1
+        self.swarm2 = swarm2
 
         # TODO create Flag objects
+
+        # add the initial environment to the history (for rendering later)
+        self.history.append(self.environment.copy())
         return
 
     def reset(self):
         np.random.seed()
+        self.history = []
         self.init_env()
 
+    def _execute_move(self, swarm, action: MoveAction):
+        # TODO figure out collision management -- just implemented forward movement now
+        curr_x = action.agent_status.x
+        curr_y = action.agent_status.y
+        direction = action.direction
+        magnitude = action.magnitude
+        
+        # swarm1 uses standard directions, swarm2 uses reversed directions
+        x_mult = 1 if swarm == "swarm1" else -1
+        y_mult = 1 if swarm == "swarm1" else -1
+        
+        if direction == Direction.NORTH:
+            new_x = curr_x + magnitude * x_mult
+            new_y = curr_y
+        elif direction == Direction.NORTHEAST:
+            new_x = curr_x + magnitude * x_mult
+            new_y = curr_y + magnitude * y_mult
+        elif direction == Direction.EAST:
+            new_x = curr_x
+            new_y = curr_y + magnitude * y_mult
+        elif direction == Direction.SOUTHEAST:
+            new_x = curr_x - magnitude * x_mult
+            new_y = curr_y + magnitude * y_mult
+        elif direction == Direction.SOUTH:
+            new_x = curr_x - magnitude * x_mult
+            new_y = curr_y
+        elif direction == Direction.SOUTHWEST:
+            new_x = curr_x - magnitude * x_mult
+            new_y = curr_y - magnitude * y_mult
+        elif direction == Direction.WEST:
+            new_x = curr_x
+            new_y = curr_y - magnitude * y_mult
+        elif direction == Direction.NORTHWEST:
+            new_x = curr_x + magnitude * x_mult
+            new_y = curr_y - magnitude * y_mult
+        
+        # Update agent position
+        action.agent_status.x = new_x
+        action.agent_status.y = new_y
+        prev_val = self.environment[curr_y, curr_x, 1]
+        self.environment[curr_y, curr_x, 1] = 0
+        self.environment[new_y, new_x, 1] = prev_val
+    
+    def _execute_engage(self, agent_status, action: EngageAction):
+        pass
+    
+    def _execute_deploy(self, agent_status, action: DeployAction):
+        pass
 
     def update(self, actions):
         # handles dynamics given actions (flag capture, movement, engagements, health updates)
         # actions is a dictionary with keys "swarm1" and "swarm2"
         # updates self.environment
         # FOR NOW: just need to implement motion
-        pass
+        actions_swarm1 = actions["swarm1"]
+        actions_swarm2 = actions["swarm2"]
+        for action in actions_swarm1:
+            # swarm 1 is always on the left side, facing right.
+            if type(action) == MoveAction:
+                self._execute_move("swarm1", action)
+            # TODO other actions
+
+        for action in actions_swarm2:
+            # swarm 2 is always on the right side, facing left.
+            if type(action) == MoveAction:
+                self._execute_move("swarm2", action)
+            # TODO other actions
+        
+        # TODO pass over all agents for health updates
+
+        return
+
 
     def step(self):
         # inference + update
         # call swarm.step() --> inference with action list as output
         # swarm.step() also handles SMART + inter-agent comms
         # call self.update(actions)
-        pass
+
+        # each "action" in the list is a tuple with agent and action
+        # for now this seems fine
+        actions_swarm1 = self.swarm1.step(self.environment)
+        actions_swarm2 = self.swarm2.step(self.environment)
+        actions = {"swarm1": actions_swarm1, "swarm2": actions_swarm2}
+        self.update(actions)
+
+        # add updated environment to history!
+        self.history.append(self.environment.copy())
+        
+        return
 
     def render(self):
         # uses self.environment, produces a 3D image of the environment
