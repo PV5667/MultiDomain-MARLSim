@@ -9,14 +9,6 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
 - For feasibility (my current compute resources are an M3 Mac and Colab Pro subscription), I will implement a grid-based 2D environment with an attached height map (this will be randomly generated).
 - 2D environment size will be fairly big (4096 x 4096 to start)
 
-
-### Observation Space
-
-
-### Action Space
-
-
-
 ### Agent Specs:
 - Ground agent: An autonomous ground vehicle, with fast flag capture and cUAS deployment capability.
     - Mobility per sec: 3 tiles
@@ -56,12 +48,18 @@ This is going to be a project exploring swarm autonomy. The initial idea I have 
     - Entity inputs: entities (e.g. flags, agents) -- handled by GNN
     - Internal State Vectors: Goal, Health -- handled by MLP
     - Inter-agent Vectors: Learned communication between agents, handled by MLP
+    - Event inputs: Key temporal events, handled by GNN
 - Sourcing of info for different inputs
     - 2D grid inputs: from environment (ground-truth)
     - Entity inputs: **within range** from env (ground-truth), **outside range** from SMART
+    - Event inputs: Handled from SMART, fixed number provided based on prioritization scores from distance and severity.
     - Internal State Vectors: **agent health** from env (ground-truth), **goal** from SMART
     - Inter-agent Vectors: Communicated between agents
 - Then combine the resulting embeddings and input to MLP, which ouptuts comms and actions.
+- Actions will be done in a factored manner, there will be multiple heads for each kind of action
+    - Movement: This will be 2 heads. One for direction (e.g. 8 directions), and another for magnitude (this is also discrete, from 1...max_range). In the direction head there will also be a NOOP category (e.g. if the agent is capturing a flag).
+    - Deploy: At the moment this is for ground vehicles, and only cUAS can be deployed. This is a simple binary head.
+    - Engage: This is slightly more complicated, since we need to support dynamic numbers of targets. So for this class of action, we will also have 2 heads. One is focused on whether to engage or not (a binary decision), and another is focused on which entity to engage. This second head will be based on the entity GNN. Each of the outputted vectors from the GNN will be scored (only if they are enemy and within range), and then we run softmax to determine which entity to engage.
 - There are two kinds of comms:
     - Inter-agent comms (learned)
     - SMART comms (deterministic) -- these are structured reports published to SMART
@@ -85,3 +83,19 @@ Overall Autonomy Stack:
 - SMART is the high-level mission planner which also serves as the human interface.
 - SMART provides objectives/statuses to Behavior Trees, which act as control flow and safety guards (e.g. limiting certain actions, forced retreat if health low, setting agent objectives/modes, etc.)
 - Learned Policies are conditioned on observations, comms, and objectives, mainly focused on movement, engagement tactics, inter-agent comms, etc.
+
+
+Rough sketch of the overall flow:
+1. Environment object is initialized, and generates N environments with the seeds provided by the user.
+2. Then run env.reset() to trigger agent and flag initialization. These are randomly initialized each time.
+3. Initialize the Swarm objects with the agent positions. TODO: initializing Flag objects.
+4. Swarm objects create individual agent instances and assign unique id's. They also initialize a SMART instance (these are representative of the situational awareness of the swarm as a whole).
+5. Call env.step(), this results in (1) observations being calculated and sent to each agent, (2) agents updating SMART if necessary, (3) agents computing decision (e.g. running the policy network), (4) actions being sent back to the environment level for updates.
+6. Basically any read operations (e.g. computing observations) can be done by the Agents, but actual updates to the environment ground truth array need to be done by the environment itself.
+
+
+Actions Overall Structure:
+- There are three kinds of actions so far:
+    - Movement: Two aspects to this. One is direction, another is magnitude. Also needs to be done within physical constraints. So if slope is too big, the action results in nothing (in the future, can maybe look at reduced movement?)
+    - Engage: Get the entity id and run the engagement. Done and scaled based on a stochastic distribution. Make update to the "damage map" stored by the environment. Once all actions have updated environment (and the damage map), the damage calculation and updates will be done by the environment in a separate pass.
+    - Deploy: Doesn't make sense to create another object for this. Add an entity to the environment ground-truth array. For simplicity assuming immediate deployment. Then, in the next step/so on, after all actions have been enacted, if any air agent is within range of the cUAS, deal damage or take it out.
