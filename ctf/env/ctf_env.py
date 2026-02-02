@@ -4,6 +4,7 @@ import numpy as np
 from terrain import generate_heightmap, compute_slope
 from swarm.swarm import Swarm
 from swarm.actions import MoveAction, EngageAction, DeployAction, Direction
+from constants import settings
 
 class CTFEnv:
     def __init__(self, height, width, n_ground_agents, n_air_agents, n_flags, seed_range):
@@ -24,8 +25,6 @@ class CTFEnv:
         self.curr_heightmap = None
         self.gradient_map = None # for initialization purposes
 
-        self.max_slope = 0.2
-
         # ground-truth numpy array containing all relevant info in environment
         # localized patches directly passed to agents as part of observation
         self.channels = 4
@@ -39,7 +38,12 @@ class CTFEnv:
         (For now, more might be added)
         """
         self.environment = np.zeros((height, width, self.channels))
+        self.damage_map = np.zeros((height, width)) # will be cleared at the end of every step
         self.history = []
+
+        # damage kernels
+        self.ground_damage_kernel = self._generate_gaussian_kernel(n=5, sigma=3)
+        self.air_damage_kernel = self._generate_gaussian_kernel(n=11, sigma=3)
 
     def _agent_pos(self, swarm_id):
 
@@ -82,7 +86,7 @@ class CTFEnv:
         Another constraint that we try to satisfy is distance between agents. Given recommended map size and n_agents, this is fairly doable.
         """
         # using self.gradient_map, mark any idx with slope > self.max_slope as unavailable
-        high_slope_idxs = np.where(self.gradient_map > self.max_slope)
+        high_slope_idxs = np.where(self.gradient_map > settings.MAX_SLOPE)
         available_terrain[high_slope_idxs] = 0
 
         for _ in range(self.n_ground_agents):
@@ -222,7 +226,7 @@ class CTFEnv:
         self.init_env()
 
     def _execute_move(self, swarm, action: MoveAction):
-        # TODO figure out collision management -- just implemented forward movement now
+        # TODO figure out conflict resolution
         curr_x = action.agent_status.x
         curr_y = action.agent_status.y
         direction = action.direction
@@ -263,12 +267,54 @@ class CTFEnv:
         prev_val = self.environment[curr_y, curr_x, 1]
         self.environment[curr_y, curr_x, 1] = 0
         self.environment[new_y, new_x, 1] = prev_val
+        return
     
     def _execute_engage(self, agent_status, action: EngageAction):
-        pass
+        # basically damage gets dealt to the specified target position
+        # this is kept track of in a global "damage map". after all actions are executed, we use this damage map to update health
+        agent_type = agent_status.agent_type
+        nominal_damage = 0
+        damage_kernel = None
+        if agent_type == "ground":
+            nominal_damage = settings.NOMINAL_GROUND_DAMAGE
+            damage_kernel = self.ground_damage_kernel
+        elif agent_type == "air":
+            nominal_damage = settings.NOMINAL_AIR_DAMAGE
+            damage_kernel = self.air_damage_kernel
+
+        success = np.random.rand() > settings.PROB_DAMAGE_SUCCESS
+        if success:
+            damage_kernel *= nominal_damage
+            # add damage kernel to damage map at target position
+            target_x = action.target_x
+            target_y = action.target_y
+            k_size = damage_kernel.shape[0]
+            limit = k_size // 2
+            x0 = max(0, target_x - limit)
+            x1 = min(self.width, target_x + limit + 1)
+            y0 = max(0, target_y - limit)
+            y1 = min(self.height, target_y + limit + 1)
+            kernel_x0 = limit - (target_x - x0)
+            kernel_x1 = limit + (x1 - target_x)
+            kernel_y0 = limit - (target_y - y0)
+            kernel_y1 = limit + (y1 - target_y)
+            self.damage_map[y0:y1, x0:x1] += damage_kernel[kernel_y0:kernel_y1, kernel_x0:kernel_x1]
+        return
     
     def _execute_deploy(self, agent_status, action: DeployAction):
         pass
+
+    def _generate_gaussian_kernel(self, n, sigma):
+        # Gaussian kernel for damage calculation
+        limit = n // 2
+        ax = np.linspace(-limit, limit, n)
+        xx, yy = np.meshgrid(ax, ax)
+        
+        # getting squared distance from center
+        dist_sq = xx**2 + yy**2
+        
+        kernel = np.exp(-dist_sq / (2 * sigma**2))
+        return kernel
 
     def update(self, actions):
         # handles dynamics given actions (flag capture, movement, engagements, health updates)
@@ -281,7 +327,10 @@ class CTFEnv:
             # swarm 1 is always on the left side, facing right.
             if type(action) == MoveAction:
                 self._execute_move("swarm1", action)
-            # TODO other actions
+            elif type(action) == EngageAction:
+                self._execute_engage()
+            elif type(action) == DeployAction:
+                self._execute_deploy()
 
         for action in actions_swarm2:
             # swarm 2 is always on the right side, facing left.
@@ -309,7 +358,7 @@ class CTFEnv:
 
         # add updated environment to history!
         self.history.append(self.environment.copy())
-        
+        self.damage_map.fill(0) # resetting the damage map
         return
 
     def render(self):

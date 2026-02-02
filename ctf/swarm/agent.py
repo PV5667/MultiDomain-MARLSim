@@ -1,13 +1,15 @@
 """Defining the agent types, along with their action and observation spaces."""
 from swarm.actions import Action, MoveAction, EngageAction, DeployAction, Direction
+from constants import settings
 
 class AgentStatus:
     """
     Internal State of the Agent
     Allows for lightweight replay + communication.
     """
-    def __init__(self, id, x, y, z, health):
+    def __init__(self, id, agent_type, x, y, z, health):
         self.id = id # this id is specific to the swarm
+        self.agent_type = agent_type
         self.x = x
         self.y = y
         self.z = z
@@ -54,7 +56,7 @@ class GroundAgent(Agent):
     def preprocess_obs(self, env_patch):
         pass
     def get_action(self, env_patch):
-        return MoveAction(self.status, Direction.NORTH, 3)
+        return MoveAction(self.status, Direction.NORTH, settings.GROUND_SPEED)
 
 class AirAgent(Agent):
     def __init__(self, status: AgentStatus):
@@ -62,8 +64,8 @@ class AirAgent(Agent):
         self.status = status
     def calculate_observation(self, env_patch):
         # this is air, so just return the fixed NxN patch around the air agent.
-        pass
+        return env_patch
     def preprocess_obs(self, env_patch):
         pass
     def get_action(self, env_patch):
-        return MoveAction(self.status, Direction.NORTH, 5)
+        return MoveAction(self.status, Direction.NORTH, settings.AIR_SPEED)

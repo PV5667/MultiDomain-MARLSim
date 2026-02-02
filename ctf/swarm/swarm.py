@@ -19,12 +19,14 @@ class Swarm:
             agent_type, x, y = pos
             if agent_type == "ground":
                 agt_id = f"ground_{self.n_ground_agents + 1}"
-                status = AgentStatus(agt_id, x, y, 0, 100) # no z at the moment...
+                agent_type = "ground"
+                status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
                 agent = GroundAgent(status)
                 self.n_ground_agents += 1
             else:
                 agt_id = f"air_{self.n_air_agents + 1}"
-                status = AgentStatus(agt_id, x, y, 0, 100) # no z at the moment...
+                agent_type = "air"
+                status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
                 agent = AirAgent(status)
                 self.n_air_agents += 1
             self.agents.append(agent)
