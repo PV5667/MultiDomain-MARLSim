@@ -282,7 +282,7 @@ class CTFEnv:
             nominal_damage = settings.NOMINAL_AIR_DAMAGE
             damage_kernel = self.air_damage_kernel
 
-        success = np.random.rand() > settings.PROB_DAMAGE_SUCCESS
+        success = np.random.rand() > settings.PROB_ENGAGE_SUCCESS
         if success:
             damage_kernel *= nominal_damage
             # add damage kernel to damage map at target position

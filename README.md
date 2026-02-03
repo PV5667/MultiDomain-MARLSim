@@ -99,3 +99,15 @@ Actions Overall Structure:
     - Movement: Two aspects to this. One is direction, another is magnitude. Also needs to be done within physical constraints. So if slope is too big, the action results in nothing (in the future, can maybe look at reduced movement?)
     - Engage: Get the entity id and run the engagement. Done and scaled based on a stochastic distribution. Make update to the "damage map" stored by the environment. Once all actions have updated environment (and the damage map), the damage calculation and updates will be done by the environment in a separate pass.
     - Deploy: Doesn't make sense to create another object for this. Add an entity to the environment ground-truth array. For simplicity assuming immediate deployment. Then, in the next step/so on, after all actions have been enacted, if any air agent is within range of the cUAS, deal damage or take it out.
+
+
+Relaying Engage Action Feedback:
+- It doesn't make sense that an agent engages a target and doesn't get any feedback on if it succeeded or not. In the future this will also be important for reward function calculations.
+- Right now I calculate damage by adding it to a global "damage map". And then after all actions have been executed (motion, deployment included), my plan is to iterate through all agents and make the necessary updates to their health.
+- I need to have a way to attribute damage to certain agents though, and then pass information on success/not as part of observations in the next step.
+- Possibly have the damage map be multichannel. Each channel corresponds to an agent id (agentid). Each swarm will have its own damage map
+- Iterating through agents, updating health, and recording obs for next step should be done at the swarm level. Call swarm.damage_calc(damage_map)
+- swarm.damage_calc does multiple things. Calculates damage-based reward
+    - Reward positive if hit enemy. Reward negative if hit friendly.
+    - On a separate tangent, should I calculate rewards at the swarm-level? To my understanding, there are really two policies I'm training, a ground policy and an air policy...
+
