@@ -111,3 +111,11 @@ Relaying Engage Action Feedback:
     - Reward positive if hit enemy. Reward negative if hit friendly.
     - On a separate tangent, should I calculate rewards at the swarm-level? To my understanding, there are really two policies I'm training, a ground policy and an air policy...
 
+
+Right now, observations provided to agents are perfect, maybe there's some way I can perturb them? Not exactly sure about how it would work in a grid-based environment, but maybe perturbing entity positions a bit, or messing up terrain observations could work?
+
+Also would be interesting to model comms dropping out, e.g. there's a certain probability that comms don't make it to other agents or SMART. What about a comms-denied environment, how would that change the behavior of policies? Like giving a swarm a command to get some flags at a certain coordinate, and that's all they have to go off.
+
+I've decided to not have a respawning mechanism so agents learn to balance health considerations along with their commands.
+
+Also, would be interesting to investigate integrating ROS with this, since this already has some compatible concepts.
