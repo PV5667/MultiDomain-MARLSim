@@ -1,20 +1,21 @@
 """Defining the agent types, along with their action and observation spaces."""
 from swarm.actions import Action, MoveAction, EngageAction, DeployAction, Direction
 from constants import settings
+from dataclasses import dataclass
 
+@dataclass
 class AgentStatus:
     """
     Internal State of the Agent
     Allows for lightweight replay + communication.
     """
-    def __init__(self, id, agent_type, x, y, z, health):
-        self.id = id
-        self.agent_type = agent_type
-        self.x = x
-        self.y = y
-        self.z = z
-        self.health = health
-        # will probably add more (e.g. scout mode, engage mode when working with rules-based behavior)
+    id: str
+    agent_type: str
+    x: int
+    y: int
+    z: int
+    health: int
+    # will probably add more (e.g. scout mode, engage mode when working with rules-based behavior)
 
 class Agent:
     def __init__(self):

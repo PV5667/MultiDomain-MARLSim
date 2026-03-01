@@ -221,7 +221,7 @@ class CTFEnv:
         self.environment[:, :, 3] = np.ones((self.height, self.width)) * 2
         for pos in self.flag_pos:
             x, y = pos
-            self.environment[y, x, 3] = 0 # neutral flag
+            self.environment[y, x, 3] = 0.0 # neutral flag
 
         # initialize swarm objects
         swarm1 = Swarm(swarm1_agent_pos, 1)
@@ -374,7 +374,7 @@ class CTFEnv:
             engager_id = event["engager_id"]
             target_id = event["target_id"]
             damage = event["damage"]
-            target_type = target_id.split("_")[1]
+            target_type = self.all_agents[target_id].status.agent_type
             max_health = settings["GROUND_HEALTH"] if target_type == "ground" else settings["AIR_HEALTH"]
             rewards[engager_id] += damage / max_health
             rewards[target_id] -= damage / max_health
