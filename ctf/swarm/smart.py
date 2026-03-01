@@ -7,7 +7,6 @@ class Disposition(Enum):
     FRIENDLY = 1
     ENEMY = 2
 
-
 class EventType(Enum):
     """TODO: Think more about the event types."""
     FLAG_CAPTURE = 1

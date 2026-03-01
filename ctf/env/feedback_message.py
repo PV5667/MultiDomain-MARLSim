@@ -9,12 +9,13 @@ Move: info about updated position
 Engage: info about engagement
 Engage Reward: reward assoc. with engage action
 Deploy: success/not (for now always successful deployment)
-
+Capture: info related to flag capture
+Capture Reward: reward assoc. with flag capture
 """
 
 @dataclass
 class FeedbackMessage:
     agent_id: str
-    action_type: str # "move", "engage", "engage_reward", "deploy"
+    action_type: str # "move", "engage", "engage_reward", "deploy", "capture", "capture_reward"
     details: dict # parse based on action type
     

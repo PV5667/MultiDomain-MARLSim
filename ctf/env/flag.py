@@ -2,6 +2,6 @@ from dataclasses import dataclass
 
 @dataclass
 class Flag:
-    x: float
-    y: float
+    x: int
+    y: int
     disposition: float = 0.0

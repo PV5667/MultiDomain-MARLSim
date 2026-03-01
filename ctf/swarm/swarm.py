@@ -61,5 +61,10 @@ class Swarm:
                 self.rewards[msg.agent_id] += msg.details["reward"]
             elif msg_type == "deploy":
                 pass
+            elif msg_type == "capture":
+                # TODO maybe add capture info to SMART? too much?
+                pass
+            elif msg_type == "capture_reward":
+                self.rewards[msg.agent_id] += msg.details["reward"]
 
         
