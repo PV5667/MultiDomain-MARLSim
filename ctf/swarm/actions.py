@@ -28,10 +28,8 @@ class Action:
         # Update SMART on result of action
         pass
 
-
-
 class MoveAction(Action):
-    def __init__(self, agent_status, direction, magnitude):
+    def __init__(self, agent_status, direction: Direction, magnitude: int):
         self.agent_status = agent_status
         self.direction = direction
         self.magnitude = magnitude

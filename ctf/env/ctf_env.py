@@ -4,7 +4,9 @@ import numpy as np
 from terrain import generate_heightmap, compute_slope
 from swarm.swarm import Swarm
 from swarm.actions import MoveAction, EngageAction, DeployAction, Direction
+from feedback_message import FeedbackMessage
 from constants import settings
+from collections import defaultdict
 
 class CTFEnv:
     def __init__(self, height, width, n_ground_agents, n_air_agents, n_flags, seed_range):
@@ -14,6 +16,7 @@ class CTFEnv:
         self.n_ground_agents = n_ground_agents
         self.n_air_agents = n_air_agents
         self.n_flags = n_flags
+        self.flag_pos = None
         self.swarm1 = None
         self.swarm2 = None
         self.seed_range = seed_range # range of seeds to sample
@@ -24,6 +27,14 @@ class CTFEnv:
         self.heightmaps = [generate_heightmap(self.height, self.width, seed) for seed in self.seed_range]
         self.curr_heightmap = None
         self.gradient_map = None # for initialization purposes
+        self.agent_grid = None # for agent search operations
+
+        self.all_agents = {}
+        self.agent_id_to_int = None
+        self.int_to_agent_id = None
+
+        self.swarm1_feedback = [] # cleared at each step
+        self.swarm2_feedback = [] # cleared at each step
 
         # ground-truth numpy array containing all relevant info in environment
         # localized patches directly passed to agents as part of observation
@@ -38,7 +49,11 @@ class CTFEnv:
         (For now, more might be added)
         """
         self.environment = np.zeros((height, width, self.channels))
-        self.damage_map = np.zeros((height, width)) # will be cleared at the end of every step
+        
+        self.damage_events = []
+        self.damage_received = {}
+        self.eliminated_agents = set()
+
         self.history = []
 
         # damage kernels
@@ -185,7 +200,7 @@ class CTFEnv:
         print("Getting Swarm 2 Agent Positions")
         swarm2_agent_pos = self._agent_pos("swarm2")
         print("Getting Flag Positions")
-        flag_pos = self._flag_pos()
+        self.flag_pos = self._flag_pos()
 
         # update self.environment (ground-truth array)
         self.environment[:, :, 0] = self.curr_heightmap
@@ -204,18 +219,34 @@ class CTFEnv:
                 self.environment[y, x, 1] = 4 # air agent of swarm2
         
         self.environment[:, :, 3] = np.ones((self.height, self.width)) * 2
-        for pos in flag_pos:
+        for pos in self.flag_pos:
             x, y = pos
             self.environment[y, x, 3] = 0 # neutral flag
 
         # initialize swarm objects
-        swarm1 = Swarm(swarm1_agent_pos)
-        swarm2 = Swarm(swarm2_agent_pos)
+        swarm1 = Swarm(swarm1_agent_pos, 1)
+        swarm2 = Swarm(swarm2_agent_pos, 2)
         self.swarm1 = swarm1
         self.swarm2 = swarm2
 
         # TODO create Flag objects
 
+        # initialize agent grid (has agent id's in a spatial manner)
+        all_agents = swarm1.agents + swarm2.agents
+        self.all_agents = {agent.status.id: agent for agent in all_agents}
+        all_agent_ids = [agent.status.id for agent in all_agents]
+
+        self.agent_id_to_int = {agent_id: i for i, agent_id in enumerate(all_agent_ids)}
+        self.int_to_agent_id = {i: agent_id for agent_id, i in self.agent_id_to_int.items()}
+
+        self.agent_grid = np.full((self.height, self.width), -1, dtype=np.int32)
+        agent_positions = [(agent.status.x, agent.status.y, agent.status.id) for agent in all_agents]
+
+        for pos in agent_positions:
+            x, y, id = pos
+            agent_int = self.agent_id_to_int[id]
+            self.agent_grid[y, x] = agent_int
+    
         # add the initial environment to the history (for rendering later)
         self.history.append(self.environment.copy())
         return
@@ -267,11 +298,26 @@ class CTFEnv:
         prev_val = self.environment[curr_y, curr_x, 1]
         self.environment[curr_y, curr_x, 1] = 0
         self.environment[new_y, new_x, 1] = prev_val
+
+        # update agent grid position
+        self.agent_grid[curr_y, curr_x] = -1
+        self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
+
+        move_reward = self._calc_move_reward(new_x, new_y)
+        details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
+        msg = FeedbackMessage(action.agent_status.agent_id, "move", details)
+
+        if swarm == "swarm1":
+            self.swarm1_feedback.append(msg)
+        else:
+            self.swarm2_feedback.append(msg)
         return
     
-    def _execute_engage(self, agent_status, action: EngageAction):
+    def _execute_engage(self, action: EngageAction):
         # basically damage gets dealt to the specified target position
-        # this is kept track of in a global "damage map". after all actions are executed, we use this damage map to update health
+        # we attribute damage, also calculate total damage done
+        # damage update function takes damage attributions and calculates rewards/health updates
+        agent_status = action.agent_status
         agent_type = agent_status.agent_type
         nominal_damage = 0
         damage_kernel = None
@@ -298,9 +344,74 @@ class CTFEnv:
             kernel_x1 = limit + (x1 - target_x)
             kernel_y0 = limit - (target_y - y0)
             kernel_y1 = limit + (y1 - target_y)
-            self.damage_map[y0:y1, x0:x1] += damage_kernel[kernel_y0:kernel_y1, kernel_x0:kernel_x1]
-        return
+
+            # find if there are any opposing agents in the damage kernel, search the agent grid
+            agent_grid_slice = self.agent_grid[y0:y1, x0:x1]
+            ys, xs = np.nonzero(agent_grid_slice != -1)
+            for ay, ax in zip(ys, xs):
+                target_agent_int = agent_grid_slice[ay, ax]
+                target_agent_id = self.int_to_agent_id[target_agent_int]
+                kernel_y = kernel_y0 + ay
+                kernel_x = kernel_x0 + ax
+                damage = damage_kernel[kernel_y, kernel_x]
+                self.damage_events.append({"engager_id": agent_status.id, "target_id": target_agent_id, "damage": damage})
+                self.damage_received[target_agent_id] = self.damage_received.get(target_agent_id, 0) + damage
+        return 
     
+    def _damage_update(self):
+        # iterate through damage_received and damage_events
+        # update agent statuses + calc reward
+        for target_agent_id in self.damage_received:
+            status = self.all_agents[target_agent_id].status
+            status.health -= self.damage_received[target_agent_id]
+            if status.health < 0:
+                # add to elimination list
+                self.eliminated_agents.add(target_agent_id)
+        
+        # reward calculation
+        rewards = defaultdict(float)
+        for event in self.damage_events:
+            engager_id = event["engager_id"]
+            target_id = event["target_id"]
+            damage = event["damage"]
+            target_type = target_id.split("_")[1]
+            max_health = settings["GROUND_HEALTH"] if target_type == "ground" else settings["AIR_HEALTH"]
+            rewards[engager_id] += damage / max_health
+            rewards[target_id] -= damage / max_health
+
+        for target_id in self.eliminated_agents:
+            # elimination reward is done as fraction of damage done in current step
+            # find all agents who dealt damage to target
+            total_damage = sum(
+                event["damage"] for event in self.damage_events if event["target_id"] == target_id
+            )
+            if total_damage == 0:
+                continue  # for safety shouldn't happen
+            for event in self.damage_events:
+                if event["target_id"] != target_id:
+                    continue
+                engager_id = event["engager_id"]
+                fraction = event["damage"] / total_damage
+                rewards[engager_id] += fraction * settings["ELIMINATE_BONUS"]
+
+            # full penalty to eliminated agent
+            rewards[target_id] -= settings["ELIMINATE_BONUS"]
+
+            # update overall env state, delete agent
+            agent_status = self.all_agents[target_id].status
+            y, x = agent_status.y, agent_status.x
+            self.agent_grid[y, x] = -1
+            self.environment[y, x, 1] = 0
+        
+        for id in rewards:
+            swarm = int(id.split("_")[0])
+            msg = FeedbackMessage(id, action_type="engage", details={"reward": rewards[id]})
+            if swarm == 1:
+                self.swarm1_feedback.append(msg)
+            else:
+                self.swarm2_feedback.append(msg)
+        return rewards
+
     def _execute_deploy(self, agent_status, action: DeployAction):
         pass
 
@@ -315,7 +426,7 @@ class CTFEnv:
         
         kernel = np.exp(-dist_sq / (2 * sigma**2))
         return kernel
-
+    
     def update(self, actions):
         # handles dynamics given actions (flag capture, movement, engagements, health updates)
         # actions is a dictionary with keys "swarm1" and "swarm2"
@@ -323,23 +434,30 @@ class CTFEnv:
         # FOR NOW: just need to implement motion
         actions_swarm1 = actions["swarm1"]
         actions_swarm2 = actions["swarm2"]
+        engage_actions = []
+        # execute all move and deploy actions first
         for action in actions_swarm1:
             # swarm 1 is always on the left side, facing right.
             if type(action) == MoveAction:
                 self._execute_move("swarm1", action)
-            elif type(action) == EngageAction:
-                self._execute_engage()
             elif type(action) == DeployAction:
                 self._execute_deploy()
+            elif type(action) == EngageAction:
+                engage_actions.append(action)
 
         for action in actions_swarm2:
             # swarm 2 is always on the right side, facing left.
             if type(action) == MoveAction:
                 self._execute_move("swarm2", action)
-            # TODO other actions
-        
-        # TODO pass over all agents for health updates
+            elif type(action) == DeployAction:
+                self._execute_deploy()
+            elif type(action) == EngageAction:
+                engage_actions.append(action)
 
+        for act in engage_actions:
+            self._execute_engage(act)
+
+        self._damage_update()
         return
 
 
@@ -354,11 +472,20 @@ class CTFEnv:
         actions_swarm1 = self.swarm1.step(self.environment)
         actions_swarm2 = self.swarm2.step(self.environment)
         actions = {"swarm1": actions_swarm1, "swarm2": actions_swarm2}
+        
         self.update(actions)
-
+        # send feedback to swarms
+        self.swarm1.receive_feedback()
+        self.swarm2.receive_feedback()
+        
         # add updated environment to history!
         self.history.append(self.environment.copy())
-        self.damage_map.fill(0) # resetting the damage map
+        self.damage_events = []
+        self.damage_received = {}
+        self.eliminated_agents = set()
+
+        self.swarm1_feedback = []
+        self.swarm2_feedback = []
         return
 
     def render(self):
@@ -366,8 +493,23 @@ class CTFEnv:
         # keep in mind that all air agents have fixed height (maybe in future will add z-axis control)
         pass
 
-    def observation_space(self, agent):
-        return self.observation_spaces[agent]
+    def _calc_move_reward(self, old_x, old_y, new_x, new_y):
+        # basically rewards if move brought agent closer to closest flag
+        # also adds a cost per step to encourage faster movement to flag
+        old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in self.flag_pos)
+        new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in self.flag_pos)
+        
+        progress_reward = old_min - new_min
+        
+        step_penalty = -0.01
+        
+        return progress_reward + step_penalty
+    
+    def _calc_damage_reward(self, damage_dealt, max_enemy_health):
+        # reward for agent that engaged and dealt damage
+        # agent that got damaged gets exact opposite
+        # reward/penalty scaled by max agent health
 
-    def action_space(self, agent):
-        return self.action_spaces[agent]
+
+        # added bonus for elimination
+        pass

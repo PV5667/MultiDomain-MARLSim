@@ -8,7 +8,7 @@ class AgentStatus:
     Allows for lightweight replay + communication.
     """
     def __init__(self, id, agent_type, x, y, z, health):
-        self.id = id # this id is specific to the swarm
+        self.id = id
         self.agent_type = agent_type
         self.x = x
         self.y = y
