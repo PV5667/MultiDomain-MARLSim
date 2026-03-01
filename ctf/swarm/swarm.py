@@ -61,4 +61,5 @@ class Swarm:
                 self.rewards[msg.agent_id] += msg.details["reward"]
             elif msg_type == "deploy":
                 pass
+
         

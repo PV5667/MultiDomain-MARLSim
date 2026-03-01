@@ -50,9 +50,11 @@ class SMART:
         self.spatial_index = None
         pass
 
-    def publish(self, agt: Agent, tick: int):
+    def publish(self, agent: Agent, tick: int):
         # basically look at the position of the agent, along with tick, and output info accordingly
-        pass
+        agent_status = agent.status
+        # look at spatial index and tick to determine info to send
+        
 
     def add_entity(self, entity: Entity):
         # observation-oriented

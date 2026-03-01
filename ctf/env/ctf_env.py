@@ -378,6 +378,9 @@ class CTFEnv:
             max_health = settings["GROUND_HEALTH"] if target_type == "ground" else settings["AIR_HEALTH"]
             rewards[engager_id] += damage / max_health
             rewards[target_id] -= damage / max_health
+            msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage})
+            self.swarm1_feedback.append(msg)
+            self.swarm2_feedback.append(msg)
 
         for target_id in self.eliminated_agents:
             # elimination reward is done as fraction of damage done in current step
@@ -405,7 +408,7 @@ class CTFEnv:
         
         for id in rewards:
             swarm = int(id.split("_")[0])
-            msg = FeedbackMessage(id, action_type="engage", details={"reward": rewards[id]})
+            msg = FeedbackMessage(id, action_type="engage_reward", details={"reward": rewards[id]})
             if swarm == 1:
                 self.swarm1_feedback.append(msg)
             else:
@@ -477,13 +480,12 @@ class CTFEnv:
         # send feedback to swarms
         self.swarm1.receive_feedback()
         self.swarm2.receive_feedback()
-        
+
         # add updated environment to history!
         self.history.append(self.environment.copy())
         self.damage_events = []
         self.damage_received = {}
         self.eliminated_agents = set()
-
         self.swarm1_feedback = []
         self.swarm2_feedback = []
         return
@@ -504,12 +506,3 @@ class CTFEnv:
         step_penalty = -0.01
         
         return progress_reward + step_penalty
-    
-    def _calc_damage_reward(self, damage_dealt, max_enemy_health):
-        # reward for agent that engaged and dealt damage
-        # agent that got damaged gets exact opposite
-        # reward/penalty scaled by max agent health
-
-
-        # added bonus for elimination
-        pass
