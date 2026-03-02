@@ -1,3 +1,4 @@
+import numpy as np
 from swarm.smart import SMART, Entity, FlagEntity, Disposition, Event, EventType
 from swarm.agent import GroundAgent, AirAgent, AgentStatus
 from env.feedback_message import FeedbackMessage
@@ -14,6 +15,8 @@ class Swarm:
     def __init__(self, height, width, flag_pos, agent_pos, swarm_id: int):
         self.agents = {}
         self.active_agents = set()
+        self.height = height
+        self.width = width
         self.smart = SMART(height, width, settings["TTL"])
         self.rewards = defaultdict(float)
         self.current_tick = 0
@@ -53,16 +56,42 @@ class Swarm:
         for id in self.active_agents:
             agent = self.agents[id]
             # TODO get env_patch to pass to each agent -- base this off observation
-            # TODO get observations from smart
-            action = agent.get_action(None)
+            obs_radius = settings["GROUND_OBS_RADIUS"] if agent.status.type == "ground" else settings["AIR_OBS_RADIUS"]
+            # calculating indices and slicing -- should be centered at agent pos
+            env_patch = self.get_env_patch(environment, agent, obs_radius)
+            # getting info from SMART
+            smart_obs = self.smart.publish(agent)
+            action = agent.get_action(env_patch, smart_obs)
             actions.append(action)
         self.current_tick += 1
         return actions
     
+    def get_env_patch(self, environment, agent, obs_radius):
+        H, W, C = environment.shape
+        y, x = agent.status.y, agent.status.x
+
+        y_min = max(0, y - obs_radius)
+        y_max = min(H, y + obs_radius + 1)
+        x_min = max(0, x - obs_radius)
+        x_max = min(W, x + obs_radius + 1)
+
+        patch = environment[y_min:y_max, x_min:x_max, :]
+
+        # pad if necessary so patch is centered
+        pad_y_top = max(0, obs_radius - y)
+        pad_y_bottom = max(0, (y + obs_radius + 1) - H)
+        pad_x_left = max(0, obs_radius - x)
+        pad_x_right = max(0, (x + obs_radius + 1) - W)
+        patch = np.pad(
+            patch,
+            ((pad_y_top, pad_y_bottom), (pad_x_left, pad_x_right), (0, 0)),
+            mode='constant',
+            constant_values=0
+        )
+        return patch
     def receive_feedback(self, feedback):
         # feedback is a list of FeedbackMessages
         # send to SMART when necessary
-
         for msg in feedback:
             msg_type = msg.action_type
             if msg_type == "move":

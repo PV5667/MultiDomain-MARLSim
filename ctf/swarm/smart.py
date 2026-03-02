@@ -80,9 +80,12 @@ class SMART:
         self.known_entities = {} # initialized with friendly agents + flags
         self.foreign_entities = {}
         self.events = []
+        
         self.foreign_grid = np.full((height, width), -1)
+        self.relevance_radius = 50
+        
         self.event_grid = np.full((height, width), -1)
-
+        
         self.next_foreign_air = 0
         self.next_foreign_ground = 0
         self.next_int = 0
@@ -90,12 +93,51 @@ class SMART:
         self.foreign_id_to_int = {}
         self.foreign_int_to_id = {}
 
-    def publish(self, agent: Agent, tick: int):
+    def publish(self, agent: Agent):
         # basically look at the position of the agent, along with tick, and output info accordingly
+        obs = {} # consists of events and entities
         agent_status = agent.status
+        x, y = agent_status.x, agent_status.y
         # spatial index: all entities within 100x100 block
-        # event spatial index: going to be combined with priority as well?
-        
+        x0 = max(0, x - self.foreign_grid_radius)
+        x1 = min(self.width, x + self.foreign_grid_radius + 1)
+        y0 = max(0, y - self.foreign_grid_radius)
+        y1 = min(self.height, y + self.foreign_grid_radius + 1)
+        foreign_patch = self.foreign_grid[y0:y1, x0:x1]
+        foreign_in_patch = np.unique(foreign_patch)
+        foreign_in_patch = [self.foreign_int_to_id[i] for i in foreign_in_patch if i != -1]
+        foreign_entities = [self.foreign_entities[id] for id in foreign_in_patch]
+        obs["foreign_entities"] = foreign_entities
+        # getting relevant known entities[]
+        flags = []
+        known_entities = []
+        for entity in self.known_entities.values():
+            if isinstance(entity, FlagEntity):
+                flags.append(entity)
+                continue
+            dx = entity.x - x
+            dy = entity.y - y
+            if dx*dx + dy*dy <= self.relevance_radius*self.relevance_radius:
+                known_entities.append(entity)
+        obs["flags"] = flags
+        obs["known_entities"] = known_entities
+        # getting relevant events
+        relevant_events = self._get_relevant_events(x, y)
+        obs["relevant_events"] = relevant_events
+    
+    def _get_relevant_events(self, x, y):
+        relevant = []
+        for event in self.events:
+            # these are distance-agnostic
+            if event.type in [EventType.FLAG_CAPTURE, EventType.FRIENDLY_ELIMINATE]:
+                relevant.append(event)
+            else:
+                dx = event.x - x
+                dy = event.y - y
+                if dx*dx + dy*dy <= self.relevance_radius**2:
+                    relevant.append(event)
+        return relevant
+    
     def add_entity_observation(self, observation: EntityObservation):
         candidate = self._find_matching_entity(observation)
         if candidate:
