@@ -17,6 +17,7 @@ class EventType(Enum):
     ENEMY_DISCOVERY = 2
     FRIENDLY_ATTACK = 3 # Friendly attacks enemy (including self)
     ENEMY_ATTACK = 4 # Enemy attacks friendly (this indicates damage dealt, not enemy id etc.)
+    FRIENDLY_ELIMINATE = 5 # friendly agent eliminated
 
 
 @dataclass
@@ -193,7 +194,19 @@ class SMART:
             event.target_id = closest_entity.id if closest_entity is not None else None
         elif event.type == EventType.ENEMY_ATTACK:
             # update the agent's health
-            pass
+            target_id = event.target_id
+            target_agent = self.known_entities[target_id]
+            damage = event.metadata["damage"]
+            if target_agent.health > 0:
+                target_agent.health -= damage
+            # clamp health to 0
+            if target_agent.health < 0:
+                target_agent.health = 0
+        elif event.type == EventType.FRIENDLY_ELIMINATE:
+            # set the agent's health to 0
+            target_id = event.target_id
+            target_agent = self.known_entities[target_agent]
+            target_agent.health = 0
         self.events.append(event)
 
     def _expire_events(self):
@@ -203,4 +216,3 @@ class SMART:
         self._expire_foreign_entities()
         self._expire_events()
         self.current_tick += 1
-        pass

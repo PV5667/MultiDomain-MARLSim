@@ -2,6 +2,7 @@ from swarm.smart import SMART, Entity, FlagEntity, Disposition, Event, EventType
 from swarm.agent import GroundAgent, AirAgent, AgentStatus
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
+from constants import settings
 
 class Swarm:
     """
@@ -10,9 +11,10 @@ class Swarm:
 
     Also makes it easier for the env to step forward.
     """
-    def __init__(self, flag_pos, agent_pos, swarm_id: int):
-        self.agents = [] # list of Agent()
-        self.smart = SMART()
+    def __init__(self, height, width, flag_pos, agent_pos, swarm_id: int):
+        self.agents = {}
+        self.active_agents = set()
+        self.smart = SMART(height, width, settings["TTL"])
         self.rewards = defaultdict(float)
         self.current_tick = 0
         # init each of the agents in agent_pos
@@ -28,6 +30,8 @@ class Swarm:
                 agent = GroundAgent(status)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "ground", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_ground_agents += 1
+                self.agents[agt_id] = agent
+                self.active_agents.add(agt_id)
             else:
                 agt_id = f"{swarm_id}_air_{self.n_air_agents + 1}"
                 agent_type = "air"
@@ -35,7 +39,8 @@ class Swarm:
                 agent = AirAgent(status)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "air", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_air_agents += 1
-            self.agents.append(agent)
+                self.agents[agt_id] = agent
+                self.active_agents.add(agt_id)
         
         for i, pos in enumerate(flag_pos):
             x, y = flag_pos
@@ -45,9 +50,10 @@ class Swarm:
         # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
         actions = []
         # iterate through all of the agents and get their actions
-        for i in range(len(self.agents)):
-            agent = self.agents[i]
+        for id in self.active_agents:
+            agent = self.agents[id]
             # TODO get env_patch to pass to each agent -- base this off observation
+            # TODO get observations from smart
             action = agent.get_action(None)
             actions.append(action)
         self.current_tick += 1
@@ -110,5 +116,13 @@ class Swarm:
                 self.smart.add_event(event)
             elif msg_type == "capture_reward":
                 self.rewards[msg.agent_id] += msg.details["reward"]
-
-        
+            elif msg_type == "eliminate":
+                # remove agent
+                self.active_agents.remove(msg.agent_id)
+                event = Event(
+                    tick=self.current_tick,
+                    type=EventType.FRIENDLY_ELIMINATE,
+                    target_id = msg.agent_id,
+                    x = msg.details["target_x"],
+                    y = msg.details["target_y"]
+                )

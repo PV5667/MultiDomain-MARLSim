@@ -232,8 +232,8 @@ class CTFEnv:
             self.flags.append(Flag(x, y, 0.0))
 
         # initialize swarm objects
-        swarm1 = Swarm(swarm1_agent_pos, 1)
-        swarm2 = Swarm(swarm2_agent_pos, 2)
+        swarm1 = Swarm(self.height, self.width, self.flag_pos, swarm1_agent_pos, 1)
+        swarm2 = Swarm(self.height, self.width, self.flag_pos, swarm2_agent_pos, 2)
         self.swarm1 = swarm1
         self.swarm2 = swarm2
 
@@ -263,6 +263,7 @@ class CTFEnv:
         np.random.seed()
         self.history = []
         self.init_env()
+
     def _execute_move(self, swarm, action: MoveAction):
         curr_x = action.agent_status.x
         curr_y = action.agent_status.y
@@ -418,6 +419,14 @@ class CTFEnv:
             self.agent_grid[y, x] = -1
             self.environment[y, x, 1] = 0 # position 
             self.environment[y, x, 2] = 0 # health -- corrects for "negative health" from above
+
+            # message swarms about eliminations
+            swarm = int(target_id[0])
+            msg = FeedbackMessage(target_id, "eliminate", {"target_x": x, "target_y": y})
+            if swarm == 1:
+                self.swarm1_feedback.append(msg)
+            else:
+                self.swarm2_feedback.append(msg)
         
         for id in rewards:
             swarm = int(id[0])

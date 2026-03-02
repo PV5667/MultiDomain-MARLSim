@@ -8,6 +8,7 @@ Different types of feedback corresponding to the type of action
 Move: info about updated position
 Engage: info about engagement
 Engage Reward: reward assoc. with engage action
+Eliminate: id of agent that was eliminated
 Deploy: success/not (for now always successful deployment)
 Capture: info related to flag capture
 Capture Reward: reward assoc. with flag capture
