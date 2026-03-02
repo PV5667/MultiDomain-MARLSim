@@ -69,7 +69,6 @@ class CTFEnv:
         self.air_damage_kernel = self._generate_gaussian_kernel(n=11, sigma=3)
 
     def _agent_pos(self, swarm_id):
-
         # generates list of random agent positions given heightmap and swarm id
         # agent_pos: (agent_type, x, y)
         agent_pos = []
@@ -264,54 +263,56 @@ class CTFEnv:
         np.random.seed()
         self.history = []
         self.init_env()
-
     def _execute_move(self, swarm, action: MoveAction):
-        # TODO figure out conflict resolution
         curr_x = action.agent_status.x
         curr_y = action.agent_status.y
         direction = action.direction
         magnitude = action.magnitude
-        
+
         # swarm1 uses standard directions, swarm2 uses reversed directions
         x_mult = 1 if swarm == "swarm1" else -1
         y_mult = 1 if swarm == "swarm1" else -1
-        
-        if direction == Direction.NORTH:
-            new_x = curr_x + magnitude * x_mult
-            new_y = curr_y
-        elif direction == Direction.NORTHEAST:
-            new_x = curr_x + magnitude * x_mult
-            new_y = curr_y + magnitude * y_mult
-        elif direction == Direction.EAST:
-            new_x = curr_x
-            new_y = curr_y + magnitude * y_mult
-        elif direction == Direction.SOUTHEAST:
-            new_x = curr_x - magnitude * x_mult
-            new_y = curr_y + magnitude * y_mult
-        elif direction == Direction.SOUTH:
-            new_x = curr_x - magnitude * x_mult
-            new_y = curr_y
-        elif direction == Direction.SOUTHWEST:
-            new_x = curr_x - magnitude * x_mult
-            new_y = curr_y - magnitude * y_mult
-        elif direction == Direction.WEST:
-            new_x = curr_x
-            new_y = curr_y - magnitude * y_mult
-        elif direction == Direction.NORTHWEST:
-            new_x = curr_x + magnitude * x_mult
-            new_y = curr_y - magnitude * y_mult
-        
-        # Update agent position
-        action.agent_status.x = new_x
-        action.agent_status.y = new_y
-        prev_val = self.environment[curr_y, curr_x, 1]
-        self.environment[curr_y, curr_x, 1] = 0
-        self.environment[new_y, new_x, 1] = prev_val
 
-        # update agent grid position
-        self.agent_grid[curr_y, curr_x] = -1
-        self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
+        direction_map = {
+            Direction.NORTH:     (1, 0),
+            Direction.NORTHEAST: (1, 1),
+            Direction.EAST:      (0, 1),
+            Direction.SOUTHEAST: (-1, 1),
+            Direction.SOUTH:     (-1, 0),
+            Direction.SOUTHWEST: (-1, -1),
+            Direction.WEST:      (0, -1),
+            Direction.NORTHWEST: (1, -1),
+        }
 
+        dx, dy = direction_map[direction]
+        dx *= magnitude * x_mult
+        dy *= magnitude * y_mult
+
+        new_x = curr_x + dx
+        new_y = curr_y + dy
+
+        # clamp new_x and new_y to bounds of grid
+        max_y, max_x = self.height, self.width
+        new_x = max(0, min(new_x, max_x - 1))
+        new_y = max(0, min(new_y, max_y - 1))
+
+        # If target cell occupied, do not move
+        if self.agent_grid[new_y, new_x] != -1:
+            new_x = curr_x
+            new_y = curr_y
+
+        if (new_x, new_y) != (curr_x, curr_y):
+            action.agent_status.x = new_x
+            action.agent_status.y = new_y
+
+            prev_val = self.environment[curr_y, curr_x, 1]
+            self.environment[curr_y, curr_x, 1] = 0
+            self.environment[new_y, new_x, 1] = prev_val
+
+            self.agent_grid[curr_y, curr_x] = -1
+            self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
+
+        # computing reward and sending message
         move_reward = self._calc_move_reward(new_x, new_y)
         details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
         msg = FeedbackMessage(action.agent_status.agent_id, "move", details)
@@ -321,7 +322,6 @@ class CTFEnv:
         else:
             self.swarm2_feedback.append(msg)
         return
-    
     def _execute_engage(self, action: EngageAction):
         # basically damage gets dealt to the specified target position
         # we attribute damage, also calculate total damage done

@@ -1,4 +1,4 @@
-from swarm.smart import SMART, Entity
+from swarm.smart import SMART, Entity, FlagEntity, Disposition
 from swarm.agent import GroundAgent, AirAgent, AgentStatus
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
@@ -10,7 +10,7 @@ class Swarm:
 
     Also makes it easier for the env to step forward.
     """
-    def __init__(self, agent_pos, swarm_id: int):
+    def __init__(self, flag_pos, agent_pos, swarm_id: int):
         self.agents = [] # list of Agent()
         self.smart = SMART()
         self.rewards = defaultdict(float)
@@ -25,14 +25,20 @@ class Swarm:
                 agent_type = "ground"
                 status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
                 agent = GroundAgent(status)
+                self.smart.known_entities[agt_id] = Entity(agt_id, "ground", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_ground_agents += 1
             else:
                 agt_id = f"{swarm_id}_air_{self.n_air_agents + 1}"
                 agent_type = "air"
                 status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
                 agent = AirAgent(status)
+                self.smart.known_entities[agt_id] = Entity(agt_id, "air", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_air_agents += 1
             self.agents.append(agent)
+        
+        for i, pos in enumerate(flag_pos):
+            x, y = flag_pos
+            self.smart.known_entities[f"flag_{i}"] = FlagEntity(f"flag_{i}", x, y, 0.0)
 
     def step(self, environment):
         # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
