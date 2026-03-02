@@ -384,11 +384,13 @@ class CTFEnv:
             engager_id = event["engager_id"]
             target_id = event["target_id"]
             damage = event["damage"]
-            target_type = self.all_agents[target_id].status.agent_type
+            target_status = self.all_agents[target_id].status
+            target_type = target_status.agent_type
+            target_x, target_y = target_status.x, target_status.y
             max_health = settings["GROUND_HEALTH"] if target_type == "ground" else settings["AIR_HEALTH"]
             rewards[engager_id] += damage / max_health
             rewards[target_id] -= damage / max_health
-            msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage})
+            msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage, "target_x": target_x, "target_y": target_y})
             self.swarm1_feedback.append(msg)
             self.swarm2_feedback.append(msg)
 

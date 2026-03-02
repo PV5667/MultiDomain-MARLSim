@@ -4,6 +4,7 @@ from env.flag import Flag
 from enum import Enum
 from dataclasses import dataclass
 from constants import settings
+from typing import Optional, Dict, Any
 
 class Disposition(Enum):
     """Currently supports Friendly, Enemy. Future iterations may support Unknown."""
@@ -15,7 +16,7 @@ class EventType(Enum):
     FLAG_CAPTURE = 1
     ENEMY_DISCOVERY = 2
     FRIENDLY_ATTACK = 3 # Friendly attacks enemy (including self)
-    ENEMY_ATTACK = 4 # Enemy attacks friendly (this indicates damage dealt, not enemy id etc.) -- includes self
+    ENEMY_ATTACK = 4 # Enemy attacks friendly (this indicates damage dealt, not enemy id etc.)
 
 
 @dataclass
@@ -53,6 +54,11 @@ class Event:
     """Represents various events that occur, for agents and humans alike to gain context on the battlespace."""
     tick: int
     type: EventType
+    source_id: Optional[str] = None
+    target_id: Optional[str] = None
+    x: Optional[int] = None
+    y: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class SMART:
     """
@@ -72,9 +78,9 @@ class SMART:
         self.ttl = ttl # time-to-live for entities
         self.known_entities = {} # initialized with friendly agents + flags
         self.foreign_entities = {}
-        self.events = None
+        self.events = []
         self.foreign_grid = np.full((height, width), -1)
-        self.event_grid = {}
+        self.event_grid = np.full((height, width), -1)
 
         self.next_foreign_air = 0
         self.next_foreign_ground = 0
@@ -93,23 +99,33 @@ class SMART:
         candidate = self._find_matching_entity(observation)
         if candidate:
             # update candidates position
-            self._update_entity(candidate, observation)
+            self._update_foreign_entity(candidate, observation)
         else:
             self._add_foreign_entity(observation)
 
     def _find_matching_entity(self, observation: EntityObservation):
         match_radius = settings["GROUND_SPEED"] if observation.type == "ground" else settings["AIR_SPEED"]
+        closest_entity = None
+        closest_dist_sq = match_radius * match_radius
 
         for entity in self.foreign_entities.values():
             if entity.type != observation.type:
                 continue
             dx = entity.x - observation.x
             dy = entity.y - observation.y
-            if dx * dx + dy * dy < match_radius * match_radius:
-                return entity
-        return None
+            dist_sq = dx * dx + dy * dy
+
+            if dist_sq < closest_dist_sq:
+                closest_dist_sq = dist_sq
+                closest_entity = entity
+        return closest_entity
     
-    def _update_entity(self, entity: Entity, entity_obs: EntityObservation):
+    def update_known_entity_pos(self, entity_id, new_x, new_y):
+        entity = self.known_entities[entity_id]
+        entity.x = new_x
+        entity.y = new_y
+
+    def _update_foreign_entity(self, entity: Entity, entity_obs: EntityObservation):
         old_x, old_y = entity.x, entity.y
         entity.last_seen_tick = self.current_tick
         entity.x = entity_obs.x
@@ -132,6 +148,16 @@ class SMART:
         self.foreign_id_to_int[new_id] = self.next_int
         self.foreign_int_to_id[self.next_int] = new_id
         self.next_int += 1
+        # add enemy discovery event
+        event = Event(
+            tick=self.current_tick,
+            type=EventType.ENEMY_DISCOVERY,
+            source_id=None,
+            target_id=new_id,
+            x=entity_obs.x,
+            y=entity_obs.y
+        )
+        self.events.append(event)
 
     def _expire_foreign_entities(self):
         to_delete = []
@@ -149,10 +175,32 @@ class SMART:
             del self.foreign_entities[entity_id]
 
     def add_event(self, event: Event):
-        # action-oriented
-        pass
+        if event.type == EventType.FRIENDLY_ATTACK:
+            # if friendly attack, try to resolve w.r.t. (existing) entities
+            engager_type = self.known_entities[event.source_id].type
+            engage_radius = settings["GROUND_OBS_RADIUS"] if engager_type == "ground" else settings["AIR_OBS_RADIUS"]
+
+            closest_entity = None
+            closest_dist_sq = engage_radius * engage_radius
+            for entity in self.foreign_entities.values():
+                dx = entity.x - event.x
+                dy = entity.y - event.y
+                dist_sq = dx * dx + dy * dy
+
+                if dist_sq < closest_dist_sq:
+                    closest_dist_sq = dist_sq
+                    closest_entity = entity
+            event.target_id = closest_entity.id if closest_entity is not None else None
+        elif event.type == EventType.ENEMY_ATTACK:
+            # update the agent's health
+            pass
+        self.events.append(event)
+
+    def _expire_events(self):
+        self.events = [e for e in self.events if self.current_tick - e.tick <= self.ttl]
 
     def step(self):
         self._expire_foreign_entities()
+        self._expire_events()
         self.current_tick += 1
         pass
