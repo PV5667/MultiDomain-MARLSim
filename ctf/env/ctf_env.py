@@ -19,8 +19,6 @@ class CTFEnv:
         self.n_flags = n_flags
         self.flag_pos = None
         self.flags = []
-        self.swarm1 = None
-        self.swarm2 = None
         self.seed_range = seed_range # range of seeds to sample
         self.curr_seed = None
 
@@ -192,25 +190,20 @@ class CTFEnv:
             mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= radius ** 2
             available_terrain[y0:y1, x0:x1][mask] = 0
 
-    def init_env(self):
-        # initializes two Swarm objects with positions and agent info
-        # also initializes flag positions and creates required objects (TODO)
-        # calls _agent_pos and _flag_pos
-        # updates self.environment with info
+    def init_env_terrain(self):
         rand_seed_idx = np.random.choice(np.arange(len(self.seed_range)))
         self.curr_seed = self.seed_range[rand_seed_idx]
         self.curr_heightmap = self.heightmaps[rand_seed_idx]
         self.gradient_map = compute_slope(self.curr_heightmap, sigma=9)
 
-        print("Getting Swarm 1 Agent Positions")
-        swarm1_agent_pos = self._agent_pos("swarm1")
-        print("Getting Swarm 2 Agent Positions")
-        swarm2_agent_pos = self._agent_pos("swarm2")
-        print("Getting Flag Positions")
-        self.flag_pos = self._flag_pos()
-
         # update self.environment (ground-truth array)
         self.environment[:, :, 0] = self.curr_heightmap
+        
+        print("Getting Flag Positions")
+        self.flag_pos = self._flag_pos()
+        return
+    
+    def init_env_entities(self, swarm1_agent_pos, swarm2_agent_pos, swarm1, swarm2):
         for pos in swarm1_agent_pos:
             agent_type, x, y = pos
             if agent_type == "ground":
@@ -231,14 +224,6 @@ class CTFEnv:
             self.environment[y, x, 3] = 0.0 # neutral flag
             self.flags.append(Flag(x, y, 0.0))
 
-        # initialize swarm objects
-        swarm1 = Swarm(self.height, self.width, self.flag_pos, swarm1_agent_pos, 1)
-        swarm2 = Swarm(self.height, self.width, self.flag_pos, swarm2_agent_pos, 2)
-        self.swarm1 = swarm1
-        self.swarm2 = swarm2
-
-        # TODO create Flag objects
-
         # initialize agent grid (has agent id's in a spatial manner)
         all_agents = swarm1.agents + swarm2.agents
         self.all_agents = {agent.status.id: agent for agent in all_agents}
@@ -254,15 +239,14 @@ class CTFEnv:
             x, y, id = pos
             agent_int = self.agent_id_to_int[id]
             self.agent_grid[y, x] = agent_int
-    
         # add the initial environment to the history (for rendering later)
         self.history.append(self.environment.copy())
-        return
+
 
     def reset(self):
         np.random.seed()
         self.history = []
-        self.init_env()
+        self.init_env_terrain()
 
     def _execute_move(self, swarm, action: MoveAction):
         curr_x = action.agent_status.x
@@ -351,9 +335,7 @@ class CTFEnv:
             y0 = max(0, target_y - limit)
             y1 = min(self.height, target_y + limit + 1)
             kernel_x0 = limit - (target_x - x0)
-            kernel_x1 = limit + (x1 - target_x)
             kernel_y0 = limit - (target_y - y0)
-            kernel_y1 = limit + (y1 - target_y)
 
             # find if there are any opposing agents in the damage kernel, search the agent grid
             agent_grid_slice = self.agent_grid[y0:y1, x0:x1]
@@ -568,20 +550,20 @@ class CTFEnv:
         # execute all move and deploy actions first
         for action in actions_swarm1:
             # swarm 1 is always on the left side, facing right.
-            if type(action) == MoveAction:
+            if isinstance(action, MoveAction):
                 self._execute_move("swarm1", action)
-            elif type(action) == DeployAction:
+            elif isinstance(action, DeployAction):
                 self._execute_deploy()
-            elif type(action) == EngageAction:
+            elif isinstance(action, EngageAction):
                 engage_actions.append(action)
 
         for action in actions_swarm2:
             # swarm 2 is always on the right side, facing left.
-            if type(action) == MoveAction:
+            if isinstance(action, MoveAction):
                 self._execute_move("swarm2", action)
-            elif type(action) == DeployAction:
+            elif isinstance(action, DeployAction):
                 self._execute_deploy()
-            elif type(action) == EngageAction:
+            elif isinstance(action, EngageAction):
                 engage_actions.append(action)
 
         for act in engage_actions:
@@ -593,9 +575,8 @@ class CTFEnv:
         self._flag_capture_calc()
         self._flag_capture_update()
         return
-
-
-    def step(self):
+    
+    def step(self, actions):
         # inference + update
         # call swarm.step() --> inference with action list as output
         # swarm.step() also handles SMART + inter-agent comms
@@ -603,14 +584,8 @@ class CTFEnv:
 
         # each "action" in the list is a tuple with agent and action
         # for now this seems fine
-        actions_swarm1 = self.swarm1.step(self.environment)
-        actions_swarm2 = self.swarm2.step(self.environment)
-        actions = {"swarm1": actions_swarm1, "swarm2": actions_swarm2}
         
         self.update(actions)
-        # send feedback to swarms
-        self.swarm1.receive_feedback()
-        self.swarm2.receive_feedback()
 
         # add updated environment to history!
         self.history.append(self.environment.copy())

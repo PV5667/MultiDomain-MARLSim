@@ -31,7 +31,7 @@ class Swarm:
                 agt_id = f"{swarm_id}_ground_{self.n_ground_agents + 1}"
                 agent_type = "ground"
                 status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
-                agent = GroundAgent(status)
+                agent = GroundAgent(self.swarm_id, status, self.smart)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "ground", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_ground_agents += 1
                 self.agents[agt_id] = agent
@@ -40,7 +40,7 @@ class Swarm:
                 agt_id = f"{swarm_id}_air_{self.n_air_agents + 1}"
                 agent_type = "air"
                 status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
-                agent = AirAgent(status)
+                agent = AirAgent(self.swarm_id, status, self.smart)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "air", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
                 self.n_air_agents += 1
                 self.agents[agt_id] = agent
@@ -48,22 +48,38 @@ class Swarm:
         
         for i, pos in enumerate(flag_pos):
             x, y = pos
-            self.smart.known_entities[f"flag_{i}"] = FlagEntity(f"flag_{i}", x, y, 0.0)
+            self.smart.known_entities[f"flag_{i}"] = FlagEntity(f"flag_{i}", x, y)
+        
+        self.dones = {agent_id: False for agent_id in self.agents}
+        self.comms = []
+        self.comms_in = {agent_id: [] for agent_id in self.agents}
 
     def step(self, environment):
         # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
+        self.rewards = defaultdict(float)
+        self.obs = {}
         actions = []
+        for agent_id, agent in self.agents.items():
+            # gather comms from previous step, excluding self
+            self.comms_in[agent_id] = [c for other_id, c in self.comms if other_id != agent_id]
+        next_comms = []
         # iterate through all of the agents and get their actions
         for id in self.active_agents:
             agent = self.agents[id]
-            # TODO get env_patch to pass to each agent -- base this off observation
-            obs_radius = settings["GROUND_OBS_RADIUS"] if agent.status.type == "ground" else settings["AIR_OBS_RADIUS"]
+            # get env_patch to pass to each agent
+            obs_radius = agent.obs_radius
             # calculating indices and slicing -- should be centered at agent pos
             env_patch = self.get_env_patch(environment, agent, obs_radius)
             # getting info from SMART
             smart_obs = self.smart.publish(agent)
-            action = agent.get_action(env_patch, smart_obs)
+            action, comm_out = agent.step(env_patch, smart_obs, self.comms_in[agent_id])
+            self.obs[id] = agent.obs
             actions.append(action)
+
+            if comm_out is not None:
+                next_comms.append((agent_id, comm_out))
+        
+        self.comms = next_comms
         self.current_tick += 1
         return actions
     

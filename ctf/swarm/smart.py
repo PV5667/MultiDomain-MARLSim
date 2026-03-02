@@ -26,8 +26,6 @@ class FlagEntity:
     id: str
     x: int
     y: int
-    disposition: float # negative if hostile, positive if friendly
-
 
 @dataclass
 class Entity:
