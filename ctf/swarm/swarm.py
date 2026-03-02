@@ -20,6 +20,7 @@ class Swarm:
         self.smart = SMART(height, width, settings["TTL"])
         self.rewards = defaultdict(float)
         self.current_tick = 0
+        self.swarm_id = swarm_id
         # init each of the agents in agent_pos
         # assign unique id to each agent (unique on global level)
         self.n_ground_agents = 0
@@ -46,7 +47,7 @@ class Swarm:
                 self.active_agents.add(agt_id)
         
         for i, pos in enumerate(flag_pos):
-            x, y = flag_pos
+            x, y = pos
             self.smart.known_entities[f"flag_{i}"] = FlagEntity(f"flag_{i}", x, y, 0.0)
 
     def step(self, environment):
@@ -101,7 +102,7 @@ class Swarm:
             elif msg_type == "engage":
                 # either register damage dealt or received
                 engager_id = msg.details["engager_id"]
-                target_id = msg.details[target_id]
+                target_id = msg.details["target_id"]
                 target_x, target_y = msg.details["target_x"], msg.details["target_y"]
                 damage = msg.details["damage"]
                 if self.swarm_id == engager_id[0]:
