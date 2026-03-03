@@ -21,7 +21,7 @@ class MAPPOBuffer:
     def add(self, obs, actions, action_idx, log_probs, values, rewards, dones):
         self.obs.append(obs)
         self.actions.append(actions)
-        self.action_idx_list(action_idx)
+        self.action_idx_list.append(action_idx)
         self.log_probs.append(log_probs)
         self.values.append(values)
         self.rewards.append(rewards)

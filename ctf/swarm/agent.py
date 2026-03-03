@@ -222,7 +222,7 @@ class Agent:
         smart_tensors = self.process_smart_obs(smart_obs)
         internal_state = self._internal_state_vec()
         if len(comms_in) > 0:
-            comms_tensor = torch.stack(comms_in, dim=0).mean(dim=0).unsqueeze(0)
+            comms_tensor = torch.stack(comms_in, dim=0).mean(dim=0)
         else:
             comms_tensor = torch.zeros((1, 256))
         self.obs["patch"] = patch

@@ -130,6 +130,7 @@ class ActorAgent(nn.Module):
         state_emb = self.state_mlp(obs["internal_state"])
         comms_emb = self.comms_in(obs["comms_in"])
         
+        #print(f"Patch Emb: {patch_emb.shape}, Entity Glob Emb: {entity_glob_emb.shape}, Event Emb: {event_emb.shape}, State Emb: {state_emb.shape}, Comms Emb: {comms_emb.shape}")
         fused = torch.cat([patch_emb, entity_glob_emb, event_emb, state_emb, comms_emb], dim=-1)
         fused = self.fusion(fused)
 
@@ -160,7 +161,6 @@ class CentralizedCritic(nn.Module):
         )
 
     def forward(self, agent_embeddings, agent_mask=None):
-        print(agent_embeddings.shape)
         x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask, )
         value = self.value_head(x)
         return value
