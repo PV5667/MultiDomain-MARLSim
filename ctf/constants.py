@@ -23,4 +23,9 @@ class Constants:
         
         self.cfg = wrap(conf_dict)
 
+    def __getattr__(self, name):
+        if self.cfg is None:
+            raise AttributeError("Constants not initialized.")
+        return getattr(self.cfg, name)
+
 settings = Constants()

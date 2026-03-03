@@ -57,7 +57,8 @@ class StateMLP(nn.Module):
     def __init__(self, input_dim, embed_dim=64):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_dim, 128), nn.ReLU(),
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
             nn.Linear(128, embed_dim)
         )
     def forward(self, x):
@@ -85,7 +86,7 @@ class PolicyHeads(nn.Module):
         move_dir_logits = self.move_dir(fused_emb)
         move_mag_logits = self.move_mag(fused_emb)
         #deploy_logits = self.deploy(fused_emb)
-        engage_logits = self.engage_bin(fused_emb)
+        engage_logits = self.engage_binary(fused_emb)
 
         # Entity scoring for target selection, concat fused emb with each entity emb
         B, N, D = entity_embs.shape
@@ -127,20 +128,20 @@ class ActorAgent(nn.Module):
         entity_embs, entity_glob_emb = self.entity_gnn(obs["entities"], obs["entity_mask"])
         _, event_emb = self.event_gnn(obs["events"], obs["event_mask"])
         state_emb = self.state_mlp(obs["internal_state"])
-        comms_emb = self.comms_mlp(obs["comms_in"])
-
+        comms_emb = self.comms_in(obs["comms_in"])
+        
         fused = torch.cat([patch_emb, entity_glob_emb, event_emb, state_emb, comms_emb], dim=-1)
         fused = self.fusion(fused)
 
         comms_out = self.comms_out(fused)
         action_dists = self.heads(fused, entity_embs)
-        return action_dists, comms_out
+        return action_dists, comms_out, fused
     
 
 class CentralizedCritic(nn.Module):
     def __init__(self, agent_emb_dim=256, n_heads=4, n_layers=2):
         super().__init__()
-
+        print(agent_emb_dim)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=agent_emb_dim,
             nhead=n_heads,
@@ -159,12 +160,7 @@ class CentralizedCritic(nn.Module):
         )
 
     def forward(self, agent_embeddings, agent_mask=None):
-        x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask)
-        # Global pooling
-        if agent_mask is not None:
-            valid = (~agent_mask).unsqueeze(-1).float()
-            x = (x * valid).sum(dim=1) / torch.clamp(valid.sum(dim=1), min=1)
-        else:
-            x = x.mean(dim=1)
+        print(agent_embeddings.shape)
+        x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask, )
         value = self.value_head(x)
         return value

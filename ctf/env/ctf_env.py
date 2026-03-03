@@ -1,13 +1,13 @@
 """Capture the Flag 2.5D Multi-Agent Environment"""
 
 import numpy as np
-from terrain import generate_heightmap, compute_slope
-from swarm.swarm import Swarm
-from swarm.actions import MoveAction, EngageAction, DeployAction, Direction
-from feedback_message import FeedbackMessage
+from env.terrain import generate_heightmap, compute_slope
+from swarm.actions import MoveAction, EngageAction, DeployAction
+from swarm.core import *
+from env.feedback_message import FeedbackMessage
 from constants import settings
 from collections import defaultdict
-from flag import Flag
+from env.flag import Flag
 
 class CTFEnv:
     def __init__(self, height, width, n_ground_agents, n_air_agents, n_flags, seed_range):
@@ -225,15 +225,14 @@ class CTFEnv:
             self.flags.append(Flag(x, y, 0.0))
 
         # initialize agent grid (has agent id's in a spatial manner)
-        all_agents = swarm1.agents + swarm2.agents
-        self.all_agents = {agent.status.id: agent for agent in all_agents}
-        all_agent_ids = [agent.status.id for agent in all_agents]
+        self.all_agents = swarm1.agents | swarm2.agents
+        all_agent_ids = list(self.all_agents.keys())
 
         self.agent_id_to_int = {agent_id: i for i, agent_id in enumerate(all_agent_ids)}
         self.int_to_agent_id = {i: agent_id for agent_id, i in self.agent_id_to_int.items()}
 
         self.agent_grid = np.full((self.height, self.width), -1, dtype=np.int32)
-        agent_positions = [(agent.status.x, agent.status.y, agent.status.id) for agent in all_agents]
+        agent_positions = [(agent.status.x, agent.status.y, agent.status.id) for agent in self.all_agents.values()]
 
         for pos in agent_positions:
             x, y, id = pos
@@ -241,7 +240,6 @@ class CTFEnv:
             self.agent_grid[y, x] = agent_int
         # add the initial environment to the history (for rendering later)
         self.history.append(self.environment.copy())
-
 
     def reset(self):
         np.random.seed()
@@ -298,9 +296,9 @@ class CTFEnv:
             self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
 
         # computing reward and sending message
-        move_reward = self._calc_move_reward(new_x, new_y)
+        move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y)
         details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
-        msg = FeedbackMessage(action.agent_status.agent_id, "move", details)
+        msg = FeedbackMessage(action.agent_status.id, "move", details)
 
         if swarm == "swarm1":
             self.swarm1_feedback.append(msg)
@@ -370,7 +368,7 @@ class CTFEnv:
             target_status = self.all_agents[target_id].status
             target_type = target_status.agent_type
             target_x, target_y = target_status.x, target_status.y
-            max_health = settings["GROUND_HEALTH"] if target_type == "ground" else settings["AIR_HEALTH"]
+            max_health = settings.GROUND_HEALTH if target_type == "ground" else settings.AIR_HEALTH
             rewards[engager_id] += damage / max_health
             rewards[target_id] -= damage / max_health
             msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage, "target_x": target_x, "target_y": target_y})
@@ -390,10 +388,10 @@ class CTFEnv:
                     continue
                 engager_id = event["engager_id"]
                 fraction = event["damage"] / total_damage
-                rewards[engager_id] += fraction * settings["ELIMINATE_BONUS"]
+                rewards[engager_id] += fraction * settings.ELIMINATE_BONUS
 
             # full penalty to eliminated agent
-            rewards[target_id] -= settings["ELIMINATE_BONUS"]
+            rewards[target_id] -= settings.ELIMINATE_BONUS
 
             # update overall env state, delete agent
             agent_status = self.all_agents[target_id].status
@@ -437,7 +435,7 @@ class CTFEnv:
     def _flag_capture_calc(self):
         # iterate through each of the flags, record all agents in proximity
         # then calculate net movement and rewards
-        capture_radius = settings["FLAG_CAPTURE_RADIUS"]
+        capture_radius = settings.FLAG_CAPTURE_RADIUS
         for flag_idx, flag in enumerate(self.flags):
             fx, fy = flag.x, flag.y
             
@@ -462,7 +460,7 @@ class CTFEnv:
                     continue
                 
                 # figure out capture increment from agent type
-                capture_inc = settings["GROUND_FLAG_CAPTURE"] if agent_type == "ground" else settings["AIR_FLAG_CAPTURE"]
+                capture_inc = settings.GROUND_FLAG_CAPTURE if agent_type == "ground" else settings.AIR_FLAG_CAPTURE
                 self.flag_events.append({"agent_id": agent_id, "inc": capture_inc, "flag_idx": flag_idx})
 
     def _flag_capture_update(self):
@@ -504,8 +502,8 @@ class CTFEnv:
         
         delta_swarm_1 = swarm_1_full_capture - self.swarm_1_prev_full_capture
         delta_swarm_2 = swarm_2_full_capture - self.swarm_2_prev_full_capture
-        flag_capture_reward = settings["FLAG_CAPTURE_REWARD"]
-        flag_hold_reward = settings["FLAG_HOLD_REWARD"]
+        flag_capture_reward = settings.FLAG_CAPTURE_REWARD
+        flag_hold_reward = settings.FLAG_HOLD_REWARD
         for agent_id in self.all_agents:
             swarm = int(agent_id[0])
             if swarm == 1:
@@ -534,10 +532,10 @@ class CTFEnv:
             swarm = int(id[0])
             if rewards[id] != 0:
                 msg = FeedbackMessage(id, action_type="capture_reward", details={"reward": rewards[id]})
-            if swarm == 1:
-                self.swarm1_feedback.append(msg)
-            else:
-                self.swarm2_feedback.append(msg)
+                if swarm == 1:
+                    self.swarm1_feedback.append(msg)
+                else:
+                    self.swarm2_feedback.append(msg)
 
     def update(self, actions):
         # handles dynamics given actions (flag capture, movement, engagements, health updates)

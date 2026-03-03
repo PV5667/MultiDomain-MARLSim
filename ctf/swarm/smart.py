@@ -1,63 +1,8 @@
 import numpy as np
-from swarm.agent import Agent, AgentStatus, GroundAgent, AirAgent
+from swarm.agent import Agent
 from env.flag import Flag
-from enum import Enum
-from dataclasses import dataclass
 from constants import settings
-from typing import Optional, Dict, Any
-
-class Disposition(Enum):
-    """Currently supports Friendly, Enemy. Future iterations may support Unknown."""
-    FRIENDLY = 1
-    ENEMY = 2
-
-class EventType(Enum):
-    """TODO: Think more about the event types."""
-    FLAG_CAPTURE = 1
-    ENEMY_DISCOVERY = 2
-    FRIENDLY_ATTACK = 3 # Friendly attacks enemy (including self)
-    ENEMY_ATTACK = 4 # Enemy attacks friendly (this indicates damage dealt, not enemy id etc.)
-    FRIENDLY_ELIMINATE = 5 # friendly agent eliminated
-
-
-@dataclass
-class FlagEntity:
-    # swarms should have their own representation of flags
-    id: str
-    x: int
-    y: int
-
-@dataclass
-class Entity:
-    id: int
-    type: str
-    disposition: Disposition
-    health: int
-    x: int
-    y: int
-    z: int
-    last_seen_tick: int = 0
-
-@dataclass
-class EntityObservation:
-    tick: int
-    type: str
-    disposition: Disposition
-    health: int
-    x: int
-    y: int
-    z: int
-
-@dataclass
-class Event:
-    """Represents various events that occur, for agents and humans alike to gain context on the battlespace."""
-    tick: int
-    type: EventType
-    source_id: Optional[str] = None
-    target_id: Optional[str] = None
-    x: Optional[int] = None
-    y: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
+from swarm.core import *
 
 class SMART:
     """
@@ -79,6 +24,9 @@ class SMART:
         self.foreign_entities = {}
         self.events = []
         
+        self.height = height
+        self.width = width
+
         self.foreign_grid = np.full((height, width), -1)
         self.relevance_radius = 50
         
@@ -97,10 +45,10 @@ class SMART:
         agent_status = agent.status
         x, y = agent_status.x, agent_status.y
         # spatial index: all entities within 100x100 block
-        x0 = max(0, x - self.foreign_grid_radius)
-        x1 = min(self.width, x + self.foreign_grid_radius + 1)
-        y0 = max(0, y - self.foreign_grid_radius)
-        y1 = min(self.height, y + self.foreign_grid_radius + 1)
+        x0 = max(0, x - self.relevance_radius)
+        x1 = min(self.width, x + self.relevance_radius + 1)
+        y0 = max(0, y - self.relevance_radius)
+        y1 = min(self.height, y + self.relevance_radius + 1)
         foreign_patch = self.foreign_grid[y0:y1, x0:x1]
         foreign_in_patch = np.unique(foreign_patch)
         foreign_in_patch = [self.foreign_int_to_id[i] for i in foreign_in_patch if i != -1]
@@ -122,6 +70,7 @@ class SMART:
         # getting relevant events
         relevant_events = self._get_relevant_events(x, y)
         obs["relevant_events"] = relevant_events
+        return obs
     
     def _get_relevant_events(self, x, y):
         relevant = []
@@ -145,7 +94,7 @@ class SMART:
             self._add_foreign_entity(observation)
 
     def _find_matching_entity(self, observation: EntityObservation):
-        match_radius = settings["GROUND_SPEED"] if observation.type == "ground" else settings["AIR_SPEED"]
+        match_radius = settings.GROUND_SPEED if observation.type == "ground" else settings.AIR_SPEED
         closest_entity = None
         closest_dist_sq = match_radius * match_radius
 
@@ -219,7 +168,7 @@ class SMART:
         if event.type == EventType.FRIENDLY_ATTACK:
             # if friendly attack, try to resolve w.r.t. (existing) entities
             engager_type = self.known_entities[event.source_id].type
-            engage_radius = settings["GROUND_OBS_RADIUS"] if engager_type == "ground" else settings["AIR_OBS_RADIUS"]
+            engage_radius = settings.GROUND_OBS_RADIUS if engager_type == "ground" else settings.AIR_OBS_RADIUS
 
             closest_entity = None
             closest_dist_sq = engage_radius * engage_radius

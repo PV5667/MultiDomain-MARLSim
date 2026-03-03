@@ -4,18 +4,7 @@ There are multiple kinds of actions, e.g. engage, move, deploy.
 """
 from enum import Enum
 from dataclasses import dataclass
-from agent import AgentStatus
-
-class Direction(Enum):
-    """Relative to each swarm's overall direction. North = Forward."""
-    NORTH=1
-    NORTHEAST=2
-    EAST=3
-    SOUTHEAST=4
-    SOUTH=5
-    SOUTHWEST=6
-    WEST=7
-    NORTHWEST=8
+from swarm.core import *
 
 @dataclass
 class MoveAction:

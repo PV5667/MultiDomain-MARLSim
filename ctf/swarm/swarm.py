@@ -1,9 +1,11 @@
 import numpy as np
 from swarm.smart import SMART, Entity, FlagEntity, Disposition, Event, EventType
-from swarm.agent import GroundAgent, AirAgent, AgentStatus
+from swarm.agent import GroundAgent, AirAgent
+from swarm.core import *
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
 from constants import settings
+from swarm.policy import CentralizedCritic
 
 class Swarm:
     """
@@ -17,10 +19,12 @@ class Swarm:
         self.active_agents = set()
         self.height = height
         self.width = width
-        self.smart = SMART(height, width, settings["TTL"])
+        self.smart = SMART(height, width, settings.TTL)
         self.rewards = defaultdict(float)
         self.current_tick = 0
         self.swarm_id = swarm_id
+        self.critic = CentralizedCritic()
+
         # init each of the agents in agent_pos
         # assign unique id to each agent (unique on global level)
         self.n_ground_agents = 0
@@ -58,6 +62,9 @@ class Swarm:
         # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
         self.rewards = defaultdict(float)
         self.obs = {}
+        self.raw_preds = {}
+        self.latents = {}
+
         actions = []
         for agent_id, agent in self.agents.items():
             # gather comms from previous step, excluding self
@@ -72,33 +79,45 @@ class Swarm:
             env_patch = self.get_env_patch(environment, agent, obs_radius)
             # getting info from SMART
             smart_obs = self.smart.publish(agent)
-            action, comm_out = agent.step(env_patch, smart_obs, self.comms_in[agent_id])
+            out_actions, comm_out, latent = agent.step(env_patch, smart_obs, self.comms_in[id])
             self.obs[id] = agent.obs
-            actions.append(action)
+            self.raw_preds[id] = agent.raw_preds
+            self.latents[id] = latent
+            for i in out_actions:
+                if i is not None:
+                    actions.append(i)
 
             if comm_out is not None:
                 next_comms.append((agent_id, comm_out))
-        
+
         self.comms = next_comms
         self.current_tick += 1
         return actions
     
     def get_env_patch(self, environment, agent, obs_radius):
+        # environment shape is (H, W, C)
         H, W, C = environment.shape
         y, x = agent.status.y, agent.status.x
+        
+        # raw bounds
+        y_min, y_max = y - obs_radius, y + obs_radius + 1
+        x_min, x_max = x - obs_radius, x + obs_radius + 1
 
-        y_min = max(0, y - obs_radius)
-        y_max = min(H, y + obs_radius + 1)
-        x_min = max(0, x - obs_radius)
-        x_max = min(W, x + obs_radius + 1)
+        # clamp bounds to slice actual array
+        slice_y_min = max(0, y_min)
+        slice_y_max = min(H, y_max)
+        slice_x_min = max(0, x_min)
+        slice_x_max = min(W, x_max)
 
-        patch = environment[y_min:y_max, x_min:x_max, :]
+        patch = environment[slice_y_min:slice_y_max, slice_x_min:slice_x_max, :]
 
-        # pad if necessary so patch is centered
-        pad_y_top = max(0, obs_radius - y)
-        pad_y_bottom = max(0, (y + obs_radius + 1) - H)
-        pad_x_left = max(0, obs_radius - x)
-        pad_x_right = max(0, (x + obs_radius + 1) - W)
+        # how much to pad by on all sides
+        # basically if a val is out of bounds it should result in being more than 0
+        pad_y_top = max(0, -y_min)
+        pad_y_bottom = max(0, y_max - H)
+        pad_x_left = max(0, -x_min)
+        pad_x_right = max(0, x_max - W)
+
         patch = np.pad(
             patch,
             ((pad_y_top, pad_y_bottom), (pad_x_left, pad_x_right), (0, 0)),
@@ -106,6 +125,7 @@ class Swarm:
             constant_values=0
         )
         return patch
+    
     def receive_feedback(self, feedback):
         # feedback is a list of FeedbackMessages
         # send to SMART when necessary
@@ -165,6 +185,7 @@ class Swarm:
             elif msg_type == "eliminate":
                 # remove agent
                 self.active_agents.remove(msg.agent_id)
+                self.dones[msg.agent_id] = True
                 event = Event(
                     tick=self.current_tick,
                     type=EventType.FRIENDLY_ELIMINATE,
