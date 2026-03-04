@@ -18,19 +18,20 @@ class SMART:
 
     """
     def __init__(self, height, width, ttl):
-        self.current_tick = 0
         self.ttl = ttl # time-to-live for entities
+        self.height = height
+        self.width = width
+        self.relevance_radius = 50
+
+        self.reset()
+        
+    def reset(self):
+        self.current_tick = 0
         self.known_entities = {} # initialized with friendly agents + flags
         self.foreign_entities = {}
         self.events = []
-        
-        self.height = height
-        self.width = width
-
-        self.foreign_grid = np.full((height, width), -1)
-        self.relevance_radius = 50
-        
-        self.event_grid = np.full((height, width), -1)
+        self.foreign_grid = np.full((self.height, self.width), -1)
+        self.event_grid = np.full((self.height, self.width), -1)
         
         self.next_foreign_air = 0
         self.next_foreign_ground = 0

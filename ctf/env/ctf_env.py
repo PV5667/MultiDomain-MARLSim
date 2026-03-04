@@ -1,5 +1,6 @@
 """Capture the Flag 2.5D Multi-Agent Environment"""
 
+from tqdm import tqdm
 import numpy as np
 from env.terrain import generate_heightmap, compute_slope
 from swarm.actions import MoveAction, EngageAction, DeployAction
@@ -24,7 +25,10 @@ class CTFEnv:
 
         # initalize the terrain
         print("Generating heightmaps...")
-        self.heightmaps = [generate_heightmap(self.height, self.width, seed) for seed in self.seed_range]
+        self.heightmaps = []
+        for seed in tqdm(self.seed_range):
+            self.heightmaps.append(generate_heightmap(self.height, self.width, seed))
+
         self.curr_heightmap = None
         self.gradient_map = None # for initialization purposes
         self.agent_grid = None # for agent search operations

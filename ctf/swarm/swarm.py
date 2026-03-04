@@ -14,9 +14,8 @@ class Swarm:
 
     Also makes it easier for the env to step forward.
     """
-    def __init__(self, height, width, flag_pos, agent_pos, swarm_id: int):
+    def __init__(self, height, width, n_ground, n_air, swarm_id: int):
         self.agents = {}
-        self.active_agents = set()
         self.height = height
         self.width = width
         self.smart = SMART(height, width, settings.TTL)
@@ -25,39 +24,55 @@ class Swarm:
         self.swarm_id = swarm_id
         self.critic = CentralizedCritic()
 
-        # init each of the agents in agent_pos
-        # assign unique id to each agent (unique on global level)
-        self.n_ground_agents = 0
-        self.n_air_agents = 0
+        self.n_ground_agents = n_ground
+        self.n_air_agents = n_air
+
+        # init each of the agents, assign unique id to each agent (unique on global level)
+        for i in range(self.n_ground_agents):
+            agt_id = f"{self.swarm_id}_ground_{i + 1}"
+            agent_type = "ground"
+            status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.GROUND_HEALTH) # dummy coords
+            self.agents[agt_id] = GroundAgent(self.swarm_id, status, self.smart)
+
+        for i in range(self.n_air_agents):
+            agt_id = f"{self.swarm_id}_air_{i + 1}"
+            agent_type = "air"
+            status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.AIR_HEALTH) # dummy coords
+            self.agents[agt_id] = AirAgent(self.swarm_id, status, self.smart)
+
+    def reset(self, flag_pos, agent_pos):
+        self.dones = {agent_id: False for agent_id in self.agents}
+        self.comms = []
+        self.comms_in = {agent_id: [] for agent_id in self.agents}
+        self.active_agents = set()
+
+        self.smart.reset()
+        # purely for agt id construction
+        n_ground_count = 0
+        n_air_count = 0
         for pos in agent_pos:
             agent_type, x, y = pos
             if agent_type == "ground":
-                agt_id = f"{swarm_id}_ground_{self.n_ground_agents + 1}"
+                agt_id = f"{self.swarm_id}_ground_{n_ground_count + 1}"
                 agent_type = "ground"
-                status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
-                agent = GroundAgent(self.swarm_id, status, self.smart)
+                status = AgentStatus(agt_id, agent_type, x, y, 0, settings.GROUND_HEALTH)
+                self.agents[agt_id].reset(status)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "ground", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
-                self.n_ground_agents += 1
-                self.agents[agt_id] = agent
+                n_ground_count += 1
                 self.active_agents.add(agt_id)
             else:
-                agt_id = f"{swarm_id}_air_{self.n_air_agents + 1}"
+                agt_id = f"{self.swarm_id}_air_{n_air_count + 1}"
                 agent_type = "air"
-                status = AgentStatus(agt_id, agent_type, x, y, 0, 100) # no z at the moment...
-                agent = AirAgent(self.swarm_id, status, self.smart)
+                status = AgentStatus(agt_id, agent_type, x, y, 0, settings.AIR_HEALTH)
+                self.agents[agt_id].reset(status)
                 self.smart.known_entities[agt_id] = Entity(agt_id, "air", Disposition.FRIENDLY, status.health, status.x, status.y, status.z)
-                self.n_air_agents += 1
-                self.agents[agt_id] = agent
+                n_air_count += 1
                 self.active_agents.add(agt_id)
-        
+
         for i, pos in enumerate(flag_pos):
             x, y = pos
             self.smart.known_entities[f"flag_{i}"] = FlagEntity(f"flag_{i}", x, y)
         
-        self.dones = {agent_id: False for agent_id in self.agents}
-        self.comms = []
-        self.comms_in = {agent_id: [] for agent_id in self.agents}
-
     def step(self, environment):
         # environment is the ground truth array -- it's passed in at every swarm step since it keeps updating
         self.rewards = defaultdict(float)
