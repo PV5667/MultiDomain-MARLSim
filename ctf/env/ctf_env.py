@@ -343,7 +343,7 @@ class CTFEnv:
 
         success = np.random.rand() > settings.PROB_ENGAGE_SUCCESS
         if success:
-            damage_kernel *= nominal_damage
+            damage_kernel = damage_kernel * nominal_damage
             # add damage kernel to damage map at target position
             target_x = action.target_x
             target_y = action.target_y
@@ -482,7 +482,7 @@ class CTFEnv:
                 
                 # figure out capture increment from agent type
                 capture_inc = settings.GROUND_FLAG_CAPTURE if agent_type == "ground" else settings.AIR_FLAG_CAPTURE
-                self.flag_events.append({"agent_id": agent_id, "inc": capture_inc, "flag_idx": flag_idx})
+                self.flag_events.append({"agent_id": agent_id, "capture_inc": capture_inc, "flag_idx": flag_idx})
 
     def _flag_capture_update(self):
         # iterate through flag capture events. calculate rewards for each agent
@@ -501,8 +501,7 @@ class CTFEnv:
             
             flag.disposition += inc
             self.environment[flag.y, flag.x, 3] += inc
-            msg = FeedbackMessage(agent_id, action_type="capture", details={"flag_idx": event["flag_idx"]})
-            swarm = int(id[0])
+            msg = FeedbackMessage(agent_id, action_type="capture", details={"flag_idx": event["flag_idx"], "capture_inc": inc})
             if swarm == 1:
                 self.swarm1_feedback.append(msg)
             else:
@@ -514,11 +513,11 @@ class CTFEnv:
         for flag in self.flags:
             if flag.disposition <= -1:
                 flag.disposition = -1
-                self.environment[flag.y, flag.x] = -1
+                self.environment[flag.y, flag.x, 3] = -1
                 swarm_1_full_capture += 1
             elif flag.disposition >= 1:
                 flag.disposition = 1
-                self.environment[flag.y, flag.x] = 1
+                self.environment[flag.y, flag.x, 3] = 1
                 swarm_2_full_capture += 1
         
         delta_swarm_1 = swarm_1_full_capture - self.swarm_1_prev_full_capture
@@ -603,17 +602,19 @@ class CTFEnv:
 
         # each "action" in the list is a tuple with agent and action
         # for now this seems fine
-        
-        self.update(actions)
-
-        # add updated environment to history!
-        self.history.append(self.environment.copy())
         self.damage_events = []
         self.damage_received = {}
         self.eliminated_agents = set()
         self.flag_events = []
         self.swarm1_feedback = []
         self.swarm2_feedback = []
+        self.swarm_1_prev_full_capture = 0
+        self.swarm_2_prev_full_capture = 0
+    
+        self.update(actions)
+
+        # add updated environment to history!
+        self.history.append(self.environment.copy())
         return
 
     def render(self):
@@ -622,13 +623,11 @@ class CTFEnv:
         pass
 
     def _calc_move_reward(self, old_x, old_y, new_x, new_y):
-        # basically rewards if move brought agent closer to closest flag
-        # also adds a cost per step to encourage faster movement to flag
+        map_diag = np.hypot(self.width, self.height)  # ~2300 for your map
         old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in self.flag_pos)
         new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in self.flag_pos)
         
-        progress_reward = old_min - new_min
-        
+        progress_reward = (old_min - new_min) / map_diag  # now in [-1, 1] range
         step_penalty = -0.01
         
         return progress_reward + step_penalty

@@ -104,7 +104,7 @@ class Swarm:
                     actions.append(i)
 
             if comm_out is not None:
-                next_comms.append((agent_id, comm_out))
+                next_comms.append((id, comm_out))
 
         self.comms = next_comms
         self.current_tick += 1
@@ -185,8 +185,8 @@ class Swarm:
                 pass
             elif msg_type == "capture":
                 # add capture info to SMART? too much?
-                agent_id = msg.details["agent_id"]
-                inc = msg.details["inc"]
+                agent_id = msg.agent_id
+                inc = msg.details["capture_inc"]
                 flag_id = f"flag_{msg.details['flag_idx']}"
                 event = Event(
                         tick=self.current_tick,
