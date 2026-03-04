@@ -28,7 +28,7 @@ class CTFEnv:
         self.heightmaps = []
         for seed in tqdm(self.seed_range):
             self.heightmaps.append(generate_heightmap(self.height, self.width, seed))
-
+        
         self.curr_heightmap = None
         self.gradient_map = None # for initialization purposes
         self.agent_grid = None # for agent search operations
@@ -288,6 +288,22 @@ class CTFEnv:
             new_x = curr_x
             new_y = curr_y
 
+        move_reward_modifier = 0
+        alpha = 8.0
+        if action.agent_status.agent_type == "ground":
+            curr_h = self.curr_heightmap[curr_y, curr_x]
+            new_h = self.curr_heightmap[new_y, new_x]
+
+            dz = new_h - curr_h
+            slope = self.gradient_map[new_y, new_x]
+            
+            # fails if slope is too much
+            if slope > settings.MAX_SLOPE:
+                new_x, new_y = curr_x, curr_y
+
+            # movement cost based on slope
+            move_reward_modifier -= abs(dz) * alpha
+
         if (new_x, new_y) != (curr_x, curr_y):
             action.agent_status.x = new_x
             action.agent_status.y = new_y
@@ -301,6 +317,7 @@ class CTFEnv:
 
         # computing reward and sending message
         move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y)
+        move_reward += move_reward_modifier
         details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
         msg = FeedbackMessage(action.agent_status.id, "move", details)
 
