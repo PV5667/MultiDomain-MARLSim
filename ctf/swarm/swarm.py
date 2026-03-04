@@ -5,7 +5,7 @@ from swarm.core import *
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
 from constants import settings
-from swarm.policy import CentralizedCritic
+from swarm.policy import CentralizedCritic, ActorAgent
 
 class Swarm:
     """
@@ -14,7 +14,7 @@ class Swarm:
 
     Also makes it easier for the env to step forward.
     """
-    def __init__(self, height, width, n_ground, n_air, swarm_id: int):
+    def __init__(self, height, width, n_ground, n_air, swarm_id: int, device="cpu"):
         self.agents = {}
         self.height = height
         self.width = width
@@ -22,8 +22,9 @@ class Swarm:
         self.rewards = defaultdict(float)
         self.current_tick = 0
         self.swarm_id = swarm_id
-        self.critic = CentralizedCritic()
-
+        self.critic = CentralizedCritic().to(device)
+        self.ground_policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
+        self.air_policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
         self.n_ground_agents = n_ground
         self.n_air_agents = n_air
 
@@ -32,13 +33,13 @@ class Swarm:
             agt_id = f"{self.swarm_id}_ground_{i + 1}"
             agent_type = "ground"
             status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.GROUND_HEALTH) # dummy coords
-            self.agents[agt_id] = GroundAgent(self.swarm_id, status, self.smart)
+            self.agents[agt_id] = GroundAgent(self.swarm_id, status, self.ground_policy, self.smart, device=device)
 
         for i in range(self.n_air_agents):
             agt_id = f"{self.swarm_id}_air_{i + 1}"
             agent_type = "air"
             status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.AIR_HEALTH) # dummy coords
-            self.agents[agt_id] = AirAgent(self.swarm_id, status, self.smart)
+            self.agents[agt_id] = AirAgent(self.swarm_id, status, self.air_policy, self.smart, device=device)
 
     def reset(self, flag_pos, agent_pos):
         self.dones = {agent_id: False for agent_id in self.agents}
@@ -86,7 +87,7 @@ class Swarm:
             self.comms_in[agent_id] = [c for other_id, c in self.comms if other_id != agent_id]
         next_comms = []
         # iterate through all of the agents and get their actions
-        for id in self.active_agents:
+        for id in sorted(self.active_agents):
             agent = self.agents[id]
             # get env_patch to pass to each agent
             obs_radius = agent.obs_radius

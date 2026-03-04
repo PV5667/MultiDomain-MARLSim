@@ -11,8 +11,10 @@ class PatchEncoder(nn.Module):
         self.net = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3), 
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
             nn.Conv2d(32, 64, kernel_size=3),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
             nn.AdaptiveAvgPool2d((4, 4)),
             nn.Flatten(),
             nn.Linear(64 * 4 * 4, embed_dim)
@@ -142,7 +144,6 @@ class ActorAgent(nn.Module):
 class CentralizedCritic(nn.Module):
     def __init__(self, agent_emb_dim=256, n_heads=4, n_layers=2):
         super().__init__()
-        print(agent_emb_dim)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=agent_emb_dim,
             nhead=n_heads,

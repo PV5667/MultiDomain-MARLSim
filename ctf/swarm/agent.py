@@ -2,7 +2,6 @@
 import torch
 import numpy as np
 from swarm.actions import MoveAction, EngageAction, DeployAction, Direction
-from swarm.policy import ActorAgent
 from constants import settings
 from swarm.core import *
 
@@ -114,6 +113,7 @@ class Agent:
                 hostile_in_range.append(False)
             
         # creating padding
+        # this is just an approximation
         MAX_ENTITIES = settings.N_GROUND_AGENTS + settings.N_AIR_AGENTS + settings.N_FLAGS
         PAD_LEN = 3 + 2 + 1 + 2 + settings.N_FLAGS
         while len(entity_vectors) < MAX_ENTITIES:
@@ -162,7 +162,7 @@ class Agent:
             "entities": entity_tensor.unsqueeze(0),
             "entity_mask": entity_mask.unsqueeze(0),
             "events": event_tensor.unsqueeze(0),
-            "hostile_in_range": hostile_in_range.unsqueeze(0),
+            "hostile_in_range": hostile_in_range.unsqueeze(0).to(self.device),
             "event_mask": event_mask.unsqueeze(0),
         }
     
@@ -213,6 +213,7 @@ class Agent:
             )
         
         return move_action, engage_action
+    
     def step(self, env_patch, smart_obs, comms_in):
         self.obs = {}
         self.raw_preds = {}
@@ -222,16 +223,17 @@ class Agent:
         smart_tensors = self.process_smart_obs(smart_obs)
         internal_state = self._internal_state_vec()
         if len(comms_in) > 0:
-            comms_tensor = torch.stack(comms_in, dim=0).mean(dim=0)
+            comms_tensor = torch.stack(comms_in, dim=0).mean(dim=0).to(self.device)
         else:
-            comms_tensor = torch.zeros((1, 256))
-        self.obs["patch"] = patch
-        self.obs["entities"] = smart_tensors["entities"]
-        self.obs["entity_mask"] = smart_tensors["entity_mask"]
-        self.obs["events"] = smart_tensors["events"]
-        self.obs["event_mask"] = smart_tensors["event_mask"]
-        self.obs["comms_in"] = comms_tensor
-        self.obs["internal_state"] = internal_state
+            comms_tensor = torch.zeros((1, 256)).to(self.device)
+
+        self.obs["patch"] = patch.to(self.device)
+        self.obs["entities"] = smart_tensors["entities"].to(self.device)
+        self.obs["entity_mask"] = smart_tensors["entity_mask"].to(self.device)
+        self.obs["events"] = smart_tensors["events"].to(self.device)
+        self.obs["event_mask"] = smart_tensors["event_mask"].to(self.device)
+        self.obs["comms_in"] = comms_tensor.to(self.device)
+        self.obs["internal_state"] = internal_state.to(self.device)
 
         action_dists, comms_out, latent = self.policy(self.obs)
         action_dists["engage_tgt"] = action_dists["engage_tgt"].masked_fill(~smart_tensors["hostile_in_range"], -1e9)
@@ -241,20 +243,37 @@ class Agent:
         actions = self.process_action_dists(action_dists)
         return actions, comms_out, latent
     
+    def evaluate(self, stored_obs, stored_action_idx):
+        action_dists, _, latent = self.policy(stored_obs)
+        action_dists["engage_tgt"] = action_dists["engage_tgt"].masked_fill(
+            ~stored_obs["entity_mask"], -1e9
+        )
+        dir_dist = torch.distributions.Categorical(logits=action_dists["move_dir"].squeeze(0))
+        mag_dist = torch.distributions.Categorical(logits=action_dists["move_mag"].squeeze(0))
+        engage_dist = torch.distributions.Categorical(logits=action_dists["engage_bin"].squeeze(0))
+        log_prob = dir_dist.log_prob(stored_action_idx["dir_idx"]) + mag_dist.log_prob(stored_action_idx["mag_idx"]) + engage_dist.log_prob(stored_action_idx["engage_idx"])
+        entropy = (dir_dist.entropy() + mag_dist.entropy() + engage_dist.entropy())
+        return log_prob, latent, entropy
+    
+    def reset(self, new_status):
+        self.status = new_status
+    
 class GroundAgent(Agent):
-    def __init__(self, swarm_id, status: AgentStatus, smart):
+    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu"):
         super().__init__()
         self.swarm_id = swarm_id
         self.status = status
         self.smart = smart
         self.obs_radius = settings.GROUND_OBS_RADIUS
-        self.policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED)
+        self.policy = policy
+        self.device = device
 
 class AirAgent(Agent):
-    def __init__(self, swarm_id, status: AgentStatus, smart):
+    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu"):
         super().__init__()
         self.swarm_id = swarm_id
         self.status = status
         self.smart = smart
         self.obs_radius = settings.AIR_OBS_RADIUS
-        self.policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED)
+        self.policy = policy
+        self.device = device
