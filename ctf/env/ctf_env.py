@@ -248,7 +248,10 @@ class CTFEnv:
     def reset(self):
         np.random.seed()
         self.history = []
+        self.flags = []
         self.init_env_terrain()
+        self.swarm_1_prev_full_capture = 0
+        self.swarm_2_prev_full_capture = 0
 
     def _execute_move(self, swarm, action: MoveAction):
         curr_x = action.agent_status.x
@@ -409,10 +412,10 @@ class CTFEnv:
                     continue
                 engager_id = event["engager_id"]
                 fraction = event["damage"] / total_damage
-                rewards[engager_id] += fraction * settings.ELIMINATE_BONUS
+                rewards[engager_id] += fraction * settings.ELIMINATE_REWARD
 
             # full penalty to eliminated agent
-            rewards[target_id] -= settings.ELIMINATE_BONUS
+            rewards[target_id] -= settings.ELIMINATE_REWARD
 
             # update overall env state, delete agent
             agent_status = self.all_agents[target_id].status
@@ -608,8 +611,6 @@ class CTFEnv:
         self.flag_events = []
         self.swarm1_feedback = []
         self.swarm2_feedback = []
-        self.swarm_1_prev_full_capture = 0
-        self.swarm_2_prev_full_capture = 0
     
         self.update(actions)
 

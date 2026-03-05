@@ -97,7 +97,7 @@ class Agent:
 
             flag_idx_vec = [0.0] * settings.N_FLAGS
             if isinstance(ent, FlagEntity):
-                idx = int(ent.id[-1])
+                idx = int(ent.id.split("_")[1])
                 flag_idx_vec[idx] = 1.0
 
             vec = type_vec + disp_vec + [health, rel_x, rel_y] + flag_idx_vec
@@ -132,7 +132,7 @@ class Agent:
             flag_id_vec = [0] * settings.N_FLAGS
             
             if event.type == EventType.FLAG_CAPTURE:
-                idx = int(event.target_id[-1])
+                idx = int(event.target_id.split("_")[1])
                 flag_id_vec[idx] = 1
             
             rel_x = (event.x - agent_x) / self.obs_radius if event.x is not None else 0.0
