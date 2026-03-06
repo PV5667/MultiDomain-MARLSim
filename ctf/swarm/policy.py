@@ -45,6 +45,13 @@ class ContextGNN(nn.Module):
     def forward(self, context, mask=None):
         # entities: (B, N, dim)
         # mask: (B, N) -- says which are padding/not
+        B, N, _ = context.shape
+        embed_dim = self.pool.out_features
+        if mask is not None and mask.all():
+            return (
+                torch.zeros(B, N, embed_dim, device=context.device), # context_embs
+                torch.zeros(B, embed_dim, device=context.device) # global_emb
+            )
         x = self.input_proj(context)
         x = self.transformer(x, src_key_padding_mask=mask)
         context_embs = x # need to keep these for the engage head (only entity enc)
