@@ -305,7 +305,7 @@ class CTFEnv:
                 new_x, new_y = curr_x, curr_y
 
             # movement cost based on slope
-            move_reward_modifier -= abs(dz) * alpha
+            move_reward_modifier -= min(abs(dz) * alpha, 0.5) 
 
         if (new_x, new_y) != (curr_x, curr_y):
             action.agent_status.x = new_x
@@ -624,11 +624,11 @@ class CTFEnv:
         pass
 
     def _calc_move_reward(self, old_x, old_y, new_x, new_y):
-        map_diag = np.hypot(self.width, self.height)  # ~2300 for your map
+        map_diag = np.hypot(self.width, self.height)
         old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in self.flag_pos)
         new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in self.flag_pos)
         
-        progress_reward = (old_min - new_min) / map_diag  # now in [-1, 1] range
+        progress_reward = (old_min - new_min) / map_diag
         step_penalty = -0.01
         
         return progress_reward + step_penalty

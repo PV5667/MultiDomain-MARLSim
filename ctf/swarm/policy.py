@@ -30,9 +30,15 @@ class ContextGNN(nn.Module):
     def __init__(self, context_dim, embed_dim=128, n_heads=4, n_layers=2):
         super().__init__()
         self.input_proj = nn.Linear(context_dim, embed_dim)
+
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim, nhead=n_heads, batch_first=True
+            d_model=embed_dim,
+            nhead=n_heads,
+            batch_first=True,
+            norm_first=True,    # pre-norm is more stable than post-norm
+            layer_norm_eps=1e-5
         )
+        
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         self.pool = nn.Linear(embed_dim, embed_dim)
 
@@ -143,11 +149,13 @@ class ActorAgent(nn.Module):
 
 class CentralizedCritic(nn.Module):
     def __init__(self, agent_emb_dim=256, n_heads=4, n_layers=2):
-        super().__init__()
+        super().__init__()   
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=agent_emb_dim,
             nhead=n_heads,
-            batch_first=True
+            batch_first=True,
+            norm_first=True,    # pre-norm is more stable than post-norm
+            layer_norm_eps=1e-5
         )
 
         self.transformer = nn.TransformerEncoder(
@@ -162,6 +170,11 @@ class CentralizedCritic(nn.Module):
         )
 
     def forward(self, agent_embeddings, agent_mask=None):
+        if agent_mask is not None and agent_mask.all():
+            return torch.zeros(
+                agent_embeddings.shape[0], agent_embeddings.shape[1], 1,
+                device=agent_embeddings.device
+            )
         x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask, )
         value = self.value_head(x)
         return value
