@@ -344,7 +344,7 @@ class CTFEnv:
             nominal_damage = settings.NOMINAL_AIR_DAMAGE
             damage_kernel = self.air_damage_kernel
 
-        success = np.random.rand() > settings.PROB_ENGAGE_SUCCESS
+        success = np.random.rand() < settings.PROB_ENGAGE_SUCCESS
         if success:
             damage_kernel = damage_kernel * nominal_damage
             # add damage kernel to damage map at target position
@@ -628,7 +628,7 @@ class CTFEnv:
         old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in self.flag_pos)
         new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in self.flag_pos)
         
-        progress_reward = (old_min - new_min) / map_diag
-        step_penalty = -0.01
+        progress_reward = (old_min - new_min) / map_diag * 10
+        step_penalty = -0.001
         
         return progress_reward + step_penalty
