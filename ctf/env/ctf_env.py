@@ -319,7 +319,7 @@ class CTFEnv:
             self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
 
         # computing reward and sending message
-        move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y)
+        move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y, swarm)
         move_reward += move_reward_modifier
         details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
         msg = FeedbackMessage(action.agent_status.id, "move", details)
@@ -359,7 +359,7 @@ class CTFEnv:
             kernel_x0 = limit - (target_x - x0)
             kernel_y0 = limit - (target_y - y0)
 
-            # find if there are any opposing agents in the damage kernel, search the agent grid
+            # find if there are any agents in the damage kernel, search the agent grid (friendly fire on)
             agent_grid_slice = self.agent_grid[y0:y1, x0:x1]
             ys, xs = np.nonzero(agent_grid_slice != -1)
             for ay, ax in zip(ys, xs):
@@ -459,6 +459,7 @@ class CTFEnv:
     def _flag_capture_calc(self):
         # iterate through each of the flags, record all agents in proximity
         # then calculate net movement and rewards
+        flag_agent_counts = defaultdict(int)
         capture_radius = settings.FLAG_CAPTURE_RADIUS
         for flag_idx, flag in enumerate(self.flags):
             fx, fy = flag.x, flag.y
@@ -486,8 +487,10 @@ class CTFEnv:
                 # figure out capture increment from agent type
                 capture_inc = settings.GROUND_FLAG_CAPTURE if agent_type == "ground" else settings.AIR_FLAG_CAPTURE
                 self.flag_events.append({"agent_id": agent_id, "capture_inc": capture_inc, "flag_idx": flag_idx})
-
-    def _flag_capture_update(self):
+                flag_agent_counts[flag_idx] += 1
+        return flag_agent_counts
+    
+    def _flag_capture_update(self, flag_agent_counts):
         # iterate through flag capture events. calculate rewards for each agent
         # also update dispositions of flags
         rewards = defaultdict(float)
@@ -495,9 +498,15 @@ class CTFEnv:
             agent_id = event["agent_id"]
             swarm = int(agent_id[0])
             inc = event["capture_inc"]
-            flag = self.flags[event["flag_idx"]]
-            rewards[agent_id] += inc
-            
+            flag_idx = event["flag_idx"]
+            flag = self.flags[flag_idx]
+            n_agents = flag_agent_counts[flag_idx]
+            inc = inc / np.sqrt(n_agents)
+            # dont give capture reward if flag already captured by team
+            already_captured = (swarm == 1 and flag.disposition <= -1) or (swarm == 2 and flag.disposition >= 1)
+            if not already_captured:
+                rewards[agent_id] += inc
+                
             # update disposition of flag
             if swarm == 1:
                 inc *= -1
@@ -564,7 +573,6 @@ class CTFEnv:
         # handles dynamics given actions (flag capture, movement, engagements, health updates)
         # actions is a dictionary with keys "swarm1" and "swarm2"
         # updates self.environment
-        # FOR NOW: just need to implement motion
         actions_swarm1 = actions["swarm1"]
         actions_swarm2 = actions["swarm2"]
         engage_actions = []
@@ -593,8 +601,8 @@ class CTFEnv:
         self._damage_update()
 
         # updates for flag capture
-        self._flag_capture_calc()
-        self._flag_capture_update()
+        flag_agent_counts = self._flag_capture_calc()
+        self._flag_capture_update(flag_agent_counts)
         return
     
     def step(self, actions):
@@ -623,10 +631,20 @@ class CTFEnv:
         # keep in mind that all air agents have fixed height (maybe in future will add z-axis control)
         pass
 
-    def _calc_move_reward(self, old_x, old_y, new_x, new_y):
+    def _calc_move_reward(self, old_x, old_y, new_x, new_y, swarm):
         map_diag = np.hypot(self.width, self.height)
-        old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in self.flag_pos)
-        new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in self.flag_pos)
+        relevant_flags = []
+        for (fx, fy), flag in zip(self.flag_pos, self.flags):
+            if swarm == "swarm1" and flag.disposition <= -1:
+                continue
+            if swarm == "swarm2" and flag.disposition >= 1:
+                continue
+            relevant_flags.append((fx, fy))
+        if not relevant_flags:
+            return -0.001
+        
+        old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in relevant_flags)
+        new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in relevant_flags)
         
         progress_reward = (old_min - new_min) / map_diag * 10
         step_penalty = -0.001

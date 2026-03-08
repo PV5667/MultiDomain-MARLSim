@@ -30,7 +30,6 @@ class ContextGNN(nn.Module):
     def __init__(self, context_dim, embed_dim=128, n_heads=4, n_layers=2):
         super().__init__()
         self.input_proj = nn.Linear(context_dim, embed_dim)
-
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=n_heads,
@@ -38,7 +37,6 @@ class ContextGNN(nn.Module):
             norm_first=True,    # pre-norm is more stable than post-norm
             layer_norm_eps=1e-5
         )
-        
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         self.pool = nn.Linear(embed_dim, embed_dim)
 
@@ -131,11 +129,16 @@ class ActorAgent(nn.Module):
         
         self.fusion = nn.Sequential(
             nn.Linear(fused_dim, 256),
+            nn.LayerNorm(256),
             nn.ReLU(),
             nn.Linear(256, 256),
+            nn.LayerNorm(256),
             nn.ReLU()
         )
-        self.comms_out = nn.Linear(256, comm_dim)
+        self.comms_out = nn.Sequential(
+            nn.Linear(256, comm_dim),
+            nn.Tanh()
+        )
         self.heads = PolicyHeads(256, entity_emb_dim=128, n_directions=n_directions, motion_range=motion_range)
 
     def forward(self, obs):
@@ -144,8 +147,6 @@ class ActorAgent(nn.Module):
         _, event_emb = self.event_gnn(obs["events"], obs["event_mask"])
         state_emb = self.state_mlp(obs["internal_state"])
         comms_emb = self.comms_in(obs["comms_in"])
-        
-        #print(f"Patch Emb: {patch_emb.shape}, Entity Glob Emb: {entity_glob_emb.shape}, Event Emb: {event_emb.shape}, State Emb: {state_emb.shape}, Comms Emb: {comms_emb.shape}")
         fused = torch.cat([patch_emb, entity_glob_emb, event_emb, state_emb, comms_emb], dim=-1)
         fused = self.fusion(fused)
 
@@ -156,7 +157,7 @@ class ActorAgent(nn.Module):
 
 class CentralizedCritic(nn.Module):
     def __init__(self, agent_emb_dim=256, n_heads=4, n_layers=2):
-        super().__init__()   
+        super().__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=agent_emb_dim,
             nhead=n_heads,
@@ -177,11 +178,13 @@ class CentralizedCritic(nn.Module):
         )
 
     def forward(self, agent_embeddings, agent_mask=None):
+        B, N, D = agent_embeddings.shape
+
+        device, dtype = agent_embeddings.device, agent_embeddings.dtype
+
         if agent_mask is not None and agent_mask.all():
-            return torch.zeros(
-                agent_embeddings.shape[0], agent_embeddings.shape[1], 1,
-                device=agent_embeddings.device
-            )
-        x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask, )
-        value = self.value_head(x)
+            return torch.zeros(B, N, 1, device=device, dtype=dtype)
+        
+        x = self.transformer(agent_embeddings, src_key_padding_mask=agent_mask)
+        value = self.value_head(x) 
         return value

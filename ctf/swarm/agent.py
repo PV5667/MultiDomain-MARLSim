@@ -126,6 +126,8 @@ class Agent:
         hostile_in_range = torch.tensor(hostile_in_range, dtype=torch.bool)
 
         # iterate through events and encode as vecs
+        event_vectors = []
+        event_mask = []
         for event in smart_obs["relevant_events"]:
             type_vec = [0, 0, 0, 0, 0]
             type_vec[event.type.value] = 1
@@ -143,17 +145,15 @@ class Agent:
 
             vec = type_vec + [rel_x, rel_y, damage, time_delta] + flag_id_vec
             event_vectors.append(vec)
+            event_mask.append(False)
         
-        event_mask = []
         MAX_EVENTS = settings.MAX_EVENTS
+        event_vectors = event_vectors[:MAX_EVENTS]
+        event_mask = event_mask[:MAX_EVENTS]
         EVENT_PAD_LEN = 5 + 4 + settings.N_FLAGS
         while len(event_vectors) < MAX_EVENTS:
             event_vectors.append([0.0] * EVENT_PAD_LEN)
             event_mask.append(True)
-
-        event_vectors = event_vectors[:MAX_EVENTS]
-        event_mask = [False] * min(len(smart_obs["relevant_events"]), MAX_EVENTS) + event_mask
-        event_mask = event_mask[:MAX_EVENTS]
 
         event_tensor = torch.tensor(event_vectors, dtype=torch.float32)
         event_mask = torch.tensor(event_mask, dtype=torch.bool)
@@ -181,7 +181,7 @@ class Agent:
         
         return torch.tensor(vec, dtype=torch.float32).unsqueeze(0)
     
-    def process_action_dists(self, action_dists):
+    def process_action_dists(self, action_dists, in_range_mask):
         # goes over different decision heads. returns actual action
         agent_status = self.status  # current agent status
         move_dir_logits = action_dists["move_dir"]
@@ -199,19 +199,18 @@ class Agent:
         engage_logits = action_dists["engage_bin"]
         engage_prob = torch.softmax(engage_logits, dim=-1)
         engage_decision = torch.argmax(engage_prob).item()
-
         engage_action = None
         if engage_decision == 1:
             # choose target based on entity scores
-            target_scores = action_dists["engage_tgt"]
-            tgt_idx = torch.argmax(target_scores).item()
-            target_entity = self.smart_entities[tgt_idx]
-            engage_action = EngageAction(
-                agent_status,
-                target_x=target_entity.x,
-                target_y=target_entity.y
-            )
-        
+            if in_range_mask.any():
+                target_scores = action_dists["engage_tgt"]
+                tgt_idx = torch.argmax(target_scores).item()
+                target_entity = self.smart_entities[tgt_idx]
+                engage_action = EngageAction(
+                    agent_status,
+                    target_x=target_entity.x,
+                    target_y=target_entity.y
+                )
         return move_action, engage_action
     
     def step(self, env_patch, smart_obs, comms_in):
@@ -240,13 +239,13 @@ class Agent:
         self.raw_preds["actions"] = action_dists
         self.raw_preds["comms_out"] = comms_out
         # process the action_dists and output the final action
-        actions = self.process_action_dists(action_dists)
+        actions = self.process_action_dists(action_dists, smart_tensors["hostile_in_range"])
         return actions, comms_out, latent
     
     def evaluate(self, stored_obs, stored_action_idx):
         action_dists, _, latent = self.policy(stored_obs)
         action_dists["engage_tgt"] = action_dists["engage_tgt"].masked_fill(
-            ~stored_obs["entity_mask"], -1e9
+            ~stored_obs["hostile_in_range"], -1e9
         )
         dir_dist = torch.distributions.Categorical(logits=action_dists["move_dir"].squeeze(0))
         mag_dist = torch.distributions.Categorical(logits=action_dists["move_mag"].squeeze(0))
