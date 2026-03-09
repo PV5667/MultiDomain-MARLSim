@@ -84,7 +84,6 @@ class Agent:
                     type_vec[1] = 1
             elif isinstance(ent, FlagEntity):
                 type_vec[2] = 1
-
             disp_vec = [0, 0]  # friendly, enemy
             if isinstance(ent, Entity):
                 if ent.disposition.name == "FRIENDLY":
@@ -126,7 +125,7 @@ class Agent:
         entity_tensor = torch.tensor(entity_vectors, dtype=torch.float32)
         entity_mask = torch.tensor(entity_mask, dtype=torch.bool)
         hostile_in_range = torch.tensor(hostile_in_range, dtype=torch.bool)
-
+        
         # iterate through events and encode as vecs
         event_vectors = []
         event_mask = []
@@ -226,7 +225,7 @@ class Agent:
         entity_obs_list = self.report_entity_obs(env_patch)
         for obs in entity_obs_list:
             self.smart.add_entity_observation(obs)
-
+        self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
         smart_tensors = self.process_smart_obs(smart_obs)
         internal_state = self._internal_state_vec()
         if len(comms_in) > 0:

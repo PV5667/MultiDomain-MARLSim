@@ -21,10 +21,10 @@ class SMART:
         self.ttl = ttl # time-to-live for entities
         self.height = height
         self.width = width
-        self.relevance_radius = 50
+        self.relevance_radius = 100
 
         self.reset()
-        
+
     def reset(self):
         self.current_tick = 0
         self.known_entities = {} # initialized with friendly agents + flags
@@ -45,7 +45,7 @@ class SMART:
         obs = {} # consists of events and entities
         agent_status = agent.status
         x, y = agent_status.x, agent_status.y
-        # spatial index: all entities within 100x100 block
+        # spatial index: all entities within 200x200 block
         x0 = max(0, x - self.relevance_radius)
         x1 = min(self.width, x + self.relevance_radius + 1)
         y0 = max(0, y - self.relevance_radius)
@@ -138,6 +138,7 @@ class SMART:
         self.foreign_entities[new_id] = entity
         self.foreign_id_to_int[new_id] = self.next_int
         self.foreign_int_to_id[self.next_int] = new_id
+        self.foreign_grid[entity.y, entity.x] = self.next_int
         self.next_int += 1
         # add enemy discovery event
         event = Event(
@@ -161,7 +162,6 @@ class SMART:
             del self.foreign_int_to_id[id_int]
             del self.foreign_id_to_int[entity_id]
             # remove from grid
-            entity = self.foreign_entities[entity_id]
             self.foreign_grid[entity.y, entity.x] = -1
             del self.foreign_entities[entity_id]
 

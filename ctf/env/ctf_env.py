@@ -319,6 +319,10 @@ class CTFEnv:
             self.environment[curr_y, curr_x, 1] = 0
             self.environment[new_y, new_x, 1] = prev_val
 
+            prev_val_health = self.environment[curr_y, curr_x, 2]
+            self.environment[curr_y, curr_x, 2] = 0
+            self.environment[new_y, new_x, 2] = prev_val_health
+
             self.agent_grid[curr_y, curr_x] = -1
             self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
 
