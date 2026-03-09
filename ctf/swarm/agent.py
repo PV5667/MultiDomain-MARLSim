@@ -49,10 +49,12 @@ class Agent:
 
             entity_obs.append(
                 EntityObservation(
-                    observer_id=self.status.id,
-                    entity_type=ent_type,
+                    tick=self.smart.current_tick,
+                    type=ent_type,
+                    disposition=Disposition.ENEMY,
                     x=world_x,
                     y=world_y,
+                    z=0, # not doing z info yet
                     health=health
                 )
             )
@@ -140,6 +142,8 @@ class Agent:
             rel_x = (event.x - agent_x) / self.obs_radius if event.x is not None else 0.0
             rel_y = (event.y - agent_y) / self.obs_radius if event.y is not None else 0.0
 
+            if event.metadata is None:
+                event.metadata = {}
             damage = event.metadata.get("damage", 0) / max(settings.NOMINAL_GROUND_DAMAGE, settings.NOMINAL_AIR_DAMAGE)
             time_delta = (self.smart.current_tick - event.tick) / self.smart.ttl
 
@@ -219,6 +223,10 @@ class Agent:
         self.smart_entities = []
         # env_patch is localized to the fixed area around the agent (patching done during swarm.step())
         patch = self.process_env_patch(env_patch)
+        entity_obs_list = self.report_entity_obs(env_patch)
+        for obs in entity_obs_list:
+            self.smart.add_entity_observation(obs)
+
         smart_tensors = self.process_smart_obs(smart_obs)
         internal_state = self._internal_state_vec()
         if len(comms_in) > 0:
@@ -231,6 +239,7 @@ class Agent:
         self.obs["entity_mask"] = smart_tensors["entity_mask"].to(self.device)
         self.obs["events"] = smart_tensors["events"].to(self.device)
         self.obs["event_mask"] = smart_tensors["event_mask"].to(self.device)
+        self.obs["hostile_in_range"] = smart_tensors["hostile_in_range"].to(self.device)
         self.obs["comms_in"] = comms_tensor.to(self.device)
         self.obs["internal_state"] = internal_state.to(self.device)
 

@@ -161,7 +161,7 @@ class SMART:
             del self.foreign_int_to_id[id_int]
             del self.foreign_id_to_int[entity_id]
             # remove from grid
-            entity = self.foreign_grid[entity_id]
+            entity = self.foreign_entities[entity_id]
             self.foreign_grid[entity.y, entity.x] = -1
             del self.foreign_entities[entity_id]
 
@@ -195,7 +195,7 @@ class SMART:
         elif event.type == EventType.FRIENDLY_ELIMINATE:
             # set the agent's health to 0
             target_id = event.target_id
-            target_agent = self.known_entities[target_agent]
+            target_agent = self.known_entities[target_id]
             target_agent.health = 0
         self.events.append(event)
 

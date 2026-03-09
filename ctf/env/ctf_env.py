@@ -212,15 +212,19 @@ class CTFEnv:
             agent_type, x, y = pos
             if agent_type == "ground":
                 self.environment[y, x, 1] = 1 # ground agent of swarm1
+                self.environment[y, x, 2] = settings.GROUND_HEALTH
             else:
                 self.environment[y, x, 1] = 2 # air agent of swarm1
+                self.environment[y, x, 2] = settings.AIR_HEALTH
         
         for pos in swarm2_agent_pos:
             agent_type, x, y = pos
             if agent_type == "ground":
                 self.environment[y, x, 1] = 3 # ground agent of swarm2
+                self.environment[y, x, 2] = settings.GROUND_HEALTH
             else:
                 self.environment[y, x, 1] = 4 # air agent of swarm2
+                self.environment[y, x, 2] = settings.AIR_HEALTH
         
         self.environment[:, :, 3] = np.ones((self.height, self.width)) * 2
         for pos in self.flag_pos:
@@ -305,7 +309,7 @@ class CTFEnv:
                 new_x, new_y = curr_x, curr_y
 
             # movement cost based on slope
-            move_reward_modifier -= min(abs(dz) * alpha, 0.5) 
+            #move_reward_modifier -= min(abs(dz) * alpha, 0.5) 
 
         if (new_x, new_y) != (curr_x, curr_y):
             action.agent_status.x = new_x
@@ -646,7 +650,7 @@ class CTFEnv:
         old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in relevant_flags)
         new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in relevant_flags)
         
-        progress_reward = (old_min - new_min) / map_diag * 10
+        progress_reward = (old_min - new_min) / map_diag * 20
         step_penalty = -0.001
         
         return progress_reward + step_penalty

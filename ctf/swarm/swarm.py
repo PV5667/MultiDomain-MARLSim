@@ -108,6 +108,7 @@ class Swarm:
 
         self.comms = next_comms
         self.current_tick += 1
+        self.smart.step()
         return actions
     
     def get_env_patch(self, environment, agent, obs_radius):
