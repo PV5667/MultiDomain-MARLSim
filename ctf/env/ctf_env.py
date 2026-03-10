@@ -386,7 +386,7 @@ class CTFEnv:
         for target_agent_id in self.damage_received:
             status = self.all_agents[target_agent_id].status
             status.health -= self.damage_received[target_agent_id]
-            if status.health < 0:
+            if status.health <= 0:
                 # add to elimination list
                 self.eliminated_agents.add(target_agent_id)
             # update health in self.environment
@@ -402,6 +402,12 @@ class CTFEnv:
             target_type = target_status.agent_type
             target_x, target_y = target_status.x, target_status.y
             max_health = settings.GROUND_HEALTH if target_type == "ground" else settings.AIR_HEALTH
+            engager_swarm = int(engager_id[0])
+            target_swarm = int(target_id[0])
+            if engager_swarm == target_swarm:
+                rewards[engager_id] -= damage / max_health * 2.0  # penalty for friendly fire
+            else:
+                rewards[engager_id] += damage / max_health
             rewards[engager_id] += damage / max_health
             rewards[target_id] -= damage / max_health
             msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage, "target_x": target_x, "target_y": target_y})

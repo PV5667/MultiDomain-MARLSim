@@ -115,8 +115,13 @@ class Agent:
             
         # creating padding
         # this is just an approximation
-        MAX_ENTITIES = settings.N_GROUND_AGENTS + settings.N_AIR_AGENTS + settings.N_FLAGS
+        MAX_ENTITIES = (settings.N_GROUND_AGENTS + settings.N_AIR_AGENTS)*2 + settings.N_FLAGS
         PAD_LEN = 3 + 2 + 1 + 2 + settings.N_FLAGS
+        
+        entity_vectors = entity_vectors[:MAX_ENTITIES]
+        entity_mask = entity_mask[:MAX_ENTITIES]
+        hostile_in_range = hostile_in_range[:MAX_ENTITIES]
+
         while len(entity_vectors) < MAX_ENTITIES:
             entity_vectors.append([0.0] * PAD_LEN)
             entity_mask.append(True)

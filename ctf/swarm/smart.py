@@ -62,6 +62,8 @@ class SMART:
             if isinstance(entity, FlagEntity):
                 flags.append(entity)
                 continue
+            if entity.id == agent_status.id:  # skipping self
+                continue
             dx = entity.x - x
             dy = entity.y - y
             if dx*dx + dy*dy <= self.relevance_radius*self.relevance_radius:
@@ -170,10 +172,10 @@ class SMART:
             # if friendly attack, try to resolve w.r.t. (existing) entities
             engager_type = self.known_entities[event.source_id].type
             engage_radius = settings.GROUND_OBS_RADIUS if engager_type == "ground" else settings.AIR_OBS_RADIUS
-
             closest_entity = None
             closest_dist_sq = engage_radius * engage_radius
             for entity in self.foreign_entities.values():
+                # basically checking the distance from entities to targetted pos
                 dx = entity.x - event.x
                 dy = entity.y - event.y
                 dist_sq = dx * dx + dy * dy
