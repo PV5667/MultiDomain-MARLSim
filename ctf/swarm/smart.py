@@ -118,6 +118,13 @@ class SMART:
         entity.x = new_x
         entity.y = new_y
 
+    def update_flag_disp(self, flag_x, flag_y, disp):
+        for entity in self.known_entities.values():
+            if isinstance(entity, FlagEntity):
+                if entity.x == flag_x and entity.y == flag_y:
+                    entity.disposition = disp
+                    return
+
     def _update_foreign_entity(self, entity: Entity, entity_obs: EntityObservation):
         old_x, old_y = entity.x, entity.y
         entity.last_seen_tick = self.current_tick

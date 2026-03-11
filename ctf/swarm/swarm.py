@@ -23,8 +23,8 @@ class Swarm:
         self.current_tick = 0
         self.swarm_id = swarm_id
         self.critic = CentralizedCritic().to(device)
-        self.ground_policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
-        self.air_policy = ActorAgent(4, 8 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
+        self.ground_policy = ActorAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
+        self.air_policy = ActorAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
         self.n_ground_agents = n_ground
         self.n_air_agents = n_air
 

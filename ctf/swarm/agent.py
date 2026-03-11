@@ -14,12 +14,27 @@ class Agent:
         self.obs = {} # actual tensors
         self.obs_radius = None
         self.smart_entities = []
-
+    
     def process_env_patch(self, env_patch):
-        # basically go through patch, make entity observations for everything
-        # resolution is done on the SMART level
+        env_patch = env_patch.copy()
+        flag_channel = env_patch[:, :, 3]
+        # only flipping actual flag cells
+        ax, ay = self.status.x, self.status.y
+        for entity in self.smart.known_entities.values():
+            if not isinstance(entity, FlagEntity):
+                continue
+            dx = entity.x - ax
+            dy = entity.y - ay
+            if abs(dx) > self.obs_radius or abs(dy) > self.obs_radius:
+                continue
+            px = dx + self.obs_radius
+            py = dy + self.obs_radius
+            raw_disp = float(flag_channel[py, px])
+            disp = -raw_disp if self.swarm_id == 1 else raw_disp
+            env_patch[py, px, 3] = disp
+            self.smart.update_flag_disp(entity.x, entity.y, disp)              
         patch = torch.tensor(env_patch, dtype=torch.float32)
-        patch = patch.permute(2, 0, 1)  # (C, H, W)
+        patch = patch.permute(2, 0, 1)
         patch = patch.unsqueeze(0)
         return patch
     
@@ -101,7 +116,11 @@ class Agent:
                 idx = int(ent.id.split("_")[1])
                 flag_idx_vec[idx] = 1.0
 
-            vec = type_vec + disp_vec + [health, rel_x, rel_y] + flag_idx_vec
+            flag_disp = 0.0
+            if isinstance(ent, FlagEntity):
+                flag_disp = getattr(ent, 'disposition', 0.0)
+
+            vec = type_vec + disp_vec + [health, rel_x, rel_y, flag_disp] + flag_idx_vec
             entity_vectors.append(vec)
             entity_mask.append(False)
 
@@ -116,7 +135,7 @@ class Agent:
         # creating padding
         # this is just an approximation
         MAX_ENTITIES = (settings.N_GROUND_AGENTS + settings.N_AIR_AGENTS)*2 + settings.N_FLAGS
-        PAD_LEN = 3 + 2 + 1 + 2 + settings.N_FLAGS
+        PAD_LEN = 3 + 2 + 1 + 2 + 1 + settings.N_FLAGS
         
         entity_vectors = entity_vectors[:MAX_ENTITIES]
         entity_mask = entity_mask[:MAX_ENTITIES]

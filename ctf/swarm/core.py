@@ -48,6 +48,7 @@ class FlagEntity:
     id: str
     x: int
     y: int
+    disposition: float = 0.0
 
 @dataclass
 class Entity:
