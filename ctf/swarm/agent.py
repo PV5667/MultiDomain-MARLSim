@@ -41,6 +41,10 @@ class Agent:
             for old_val, new_val in remap.items():
                 new_type_channel[type_channel == old_val] = new_val
             env_patch[:, :, 1] = new_type_channel
+        
+        # flips to make obs symmetric
+        if self.swarm_id == 2:
+            env_patch = env_patch[::-1, ::-1, :].copy()
         return env_patch
         
     def to_tensor(self, env_patch):
@@ -97,6 +101,7 @@ class Agent:
         all_entities.extend(smart_obs["flags"])
         all_entities.extend(smart_obs["known_entities"])
         self.smart_entities = all_entities # for targetting info
+        x_sign = 1 if self.swarm_id == 1 else -1
         # now iterate through each entity and encode type, disposition, health, rel. pos
         for ent in all_entities:
             type_vec = [0, 0, 0]  # ground, air, flag
@@ -116,8 +121,8 @@ class Agent:
 
             health = getattr(ent, "health", 0.0) / 100.0 # normalized
 
-            rel_x = (ent.x - agent_x) / self.obs_radius
-            rel_y = (ent.y - agent_y) / self.obs_radius
+            rel_x = x_sign * (ent.x - agent_x) / self.obs_radius
+            rel_y = x_sign * (ent.y - agent_y) / self.obs_radius
 
             flag_idx_vec = [0.0] * settings.N_FLAGS
             if isinstance(ent, FlagEntity):
@@ -169,9 +174,9 @@ class Agent:
             if event.type == EventType.FLAG_CAPTURE:
                 idx = int(event.target_id.split("_")[1])
                 flag_id_vec[idx] = 1
-            
-            rel_x = (event.x - agent_x) / self.obs_radius if event.x is not None else 0.0
-            rel_y = (event.y - agent_y) / self.obs_radius if event.y is not None else 0.0
+
+            rel_x = x_sign * (event.x - agent_x)/self.obs_radius if event.x is not None else 0.0            
+            rel_y = x_sign * (event.y - agent_y) / self.obs_radius if event.y is not None else 0.0
 
             if event.metadata is None:
                 event.metadata = {}
