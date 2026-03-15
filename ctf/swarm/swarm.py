@@ -158,7 +158,7 @@ class Swarm:
                 target_id = msg.details["target_id"]
                 target_x, target_y = msg.details["target_x"], msg.details["target_y"]
                 damage = msg.details["damage"]
-                if self.swarm_id == engager_id[0]:
+                if self.swarm_id == int(engager_id[0]):
                     # means damage was dealt
                     event = Event(
                         tick=self.current_tick,
@@ -169,7 +169,7 @@ class Swarm:
                         metadata={"damage": damage}
                     )
                     self.smart.add_event(event)
-                if self.swarm_id == target_id[0]:
+                if self.swarm_id == int(target_id[0]):
                     # means damage was received
                     event = Event(
                         tick=self.current_tick,

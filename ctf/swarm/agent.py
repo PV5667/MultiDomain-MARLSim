@@ -17,6 +17,7 @@ class Agent:
     
     def process_env_patch(self, env_patch):
         env_patch = env_patch.copy()
+        type_channel = env_patch[:, :, 1]
         flag_channel = env_patch[:, :, 3]
         # only flipping actual flag cells
         ax, ay = self.status.x, self.status.y
@@ -32,22 +33,29 @@ class Agent:
             raw_disp = float(flag_channel[py, px])
             disp = -raw_disp if self.swarm_id == 1 else raw_disp
             env_patch[py, px, 3] = disp
-            self.smart.update_flag_disp(entity.x, entity.y, disp)              
+            self.smart.update_flag_disp(entity.x, entity.y, disp)  
+                
+        if self.swarm_id == 2:
+            remap = {1: 3, 2: 4, 3: 1, 4: 2}
+            new_type_channel = type_channel.copy()
+            for old_val, new_val in remap.items():
+                new_type_channel[type_channel == old_val] = new_val
+            env_patch[:, :, 1] = new_type_channel
+        return env_patch
+        
+    def to_tensor(self, env_patch):
         patch = torch.tensor(env_patch, dtype=torch.float32)
         patch = patch.permute(2, 0, 1)
         patch = patch.unsqueeze(0)
         return patch
-    
+
     def report_entity_obs(self, env_patch):
-        entity_obs = []
+        # finds entities to report and also flips values as necessary
         type_channel = env_patch[:, :, 1]
         health_channel = env_patch[:, :, 2]
-        if self.swarm_id == 1:
-            hostile_vals = [3, 4]
-        else:
-            hostile_vals = [1, 2]
-        
-        mask = np.isin(type_channel, hostile_vals)
+
+        entity_obs = []
+        mask = np.isin(type_channel, [3, 4])
         ys, xs = np.where(mask)
 
         for y_patch, x_patch in zip(ys, xs):
@@ -69,7 +77,7 @@ class Agent:
                     disposition=Disposition.ENEMY,
                     x=world_x,
                     y=world_y,
-                    z=0, # not doing z info yet
+                    z=0,
                     health=health
                 )
             )
@@ -227,6 +235,7 @@ class Agent:
         engage_prob = torch.softmax(engage_logits, dim=-1)
         engage_decision = torch.argmax(engage_prob).item()
         engage_action = None
+        tgt_idx = None
         if engage_decision == 1:
             # choose target based on entity scores
             if in_range_mask.any():
@@ -238,15 +247,16 @@ class Agent:
                     target_x=target_entity.x,
                     target_y=target_entity.y
                 )
-        return move_action, engage_action
+        return move_action, engage_action, tgt_idx
     
     def step(self, env_patch, smart_obs, comms_in):
         self.obs = {}
         self.raw_preds = {}
         self.smart_entities = []
         # env_patch is localized to the fixed area around the agent (patching done during swarm.step())
-        patch = self.process_env_patch(env_patch)
+        env_patch = self.process_env_patch(env_patch)
         entity_obs_list = self.report_entity_obs(env_patch)
+        patch = self.to_tensor(env_patch)
         for obs in entity_obs_list:
             self.smart.add_entity_observation(obs)
         self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
@@ -271,8 +281,8 @@ class Agent:
         self.raw_preds["actions"] = action_dists
         self.raw_preds["comms_out"] = comms_out
         # process the action_dists and output the final action
-        actions = self.process_action_dists(action_dists, smart_tensors["hostile_in_range"])
-        return actions, comms_out, latent
+        move, engage, _ = self.process_action_dists(action_dists, smart_tensors["hostile_in_range"])
+        return (move, engage), comms_out, latent
     
     def evaluate(self, stored_obs, stored_action_idx):
         action_dists, _, latent = self.policy(stored_obs)
@@ -282,8 +292,13 @@ class Agent:
         dir_dist = torch.distributions.Categorical(logits=action_dists["move_dir"].squeeze(0))
         mag_dist = torch.distributions.Categorical(logits=action_dists["move_mag"].squeeze(0))
         engage_dist = torch.distributions.Categorical(logits=action_dists["engage_bin"].squeeze(0))
+        tgt_dist = torch.distributions.Categorical(logits=action_dists["engage_tgt"].squeeze(0))
         log_prob = dir_dist.log_prob(stored_action_idx["dir_idx"]) + mag_dist.log_prob(stored_action_idx["mag_idx"]) + engage_dist.log_prob(stored_action_idx["engage_idx"])
+        if stored_action_idx["engage_idx"] == 1:
+            log_prob += tgt_dist.log_prob(stored_action_idx["tgt_idx"])
         entropy = (dir_dist.entropy() + mag_dist.entropy() + engage_dist.entropy())
+        if stored_action_idx["engage_idx"] == 1:
+            entropy += tgt_dist.entropy()
         return log_prob, latent, entropy
     
     def reset(self, new_status):
