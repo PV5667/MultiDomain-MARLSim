@@ -66,8 +66,13 @@ class Agent:
             entity_type_val = int(type_channel[y_patch, x_patch])
             health = float(health_channel[y_patch, x_patch])
 
-            world_x = self.status.x - self.obs_radius + x_patch
-            world_y = self.status.y - self.obs_radius + y_patch
+            if self.swarm_id == 2:
+                # unflip patch coordinates back to world coordinates
+                world_x = self.status.x + self.obs_radius - x_patch
+                world_y = self.status.y + self.obs_radius - y_patch
+            else:
+                world_x = self.status.x - self.obs_radius + x_patch
+                world_y = self.status.y - self.obs_radius + y_patch
 
             if entity_type_val in [1, 3]:
                 ent_type = "ground"
