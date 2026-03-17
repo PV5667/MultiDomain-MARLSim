@@ -67,8 +67,8 @@ class CTFEnv:
         self.history = []
 
         # damage kernels
-        self.ground_damage_kernel = self._generate_gaussian_kernel(n=5, sigma=3)
-        self.air_damage_kernel = self._generate_gaussian_kernel(n=11, sigma=3)
+        self.ground_damage_kernel = self._generate_gaussian_kernel(n=3, sigma=1)
+        self.air_damage_kernel = self._generate_gaussian_kernel(n=5, sigma=1)
 
     def _agent_pos(self, swarm_id):
         # generates list of random agent positions given heightmap and swarm id
@@ -327,7 +327,7 @@ class CTFEnv:
             self.agent_grid[new_y, new_x] = self.agent_id_to_int[action.agent_status.id]
 
         # computing reward and sending message
-        move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y, swarm)
+        move_reward = self._calc_move_reward(curr_x, curr_y, new_x, new_y, swarm, action.agent_status.agent_type)
         move_reward += move_reward_modifier
         details = {"new_x": new_x, "new_y": new_y, "reward": move_reward}
         msg = FeedbackMessage(action.agent_status.id, "move", details)
@@ -366,16 +366,20 @@ class CTFEnv:
             y1 = min(self.height, target_y + limit + 1)
             kernel_x0 = limit - (target_x - x0)
             kernel_y0 = limit - (target_y - y0)
+            kernel_x1 = kernel_x0 + (x1 - x0)
+            kernel_y1 = kernel_y0 + (y1 - y0)
 
             # find if there are any agents in the damage kernel, search the agent grid (friendly fire on)
             agent_grid_slice = self.agent_grid[y0:y1, x0:x1]
+            damage_kernel_slice = damage_kernel[kernel_y0:kernel_y1, kernel_x0:kernel_x1]
+
             ys, xs = np.nonzero(agent_grid_slice != -1)
             for ay, ax in zip(ys, xs):
                 target_agent_int = agent_grid_slice[ay, ax]
                 target_agent_id = self.int_to_agent_id[target_agent_int]
                 kernel_y = kernel_y0 + ay
                 kernel_x = kernel_x0 + ax
-                damage = damage_kernel[kernel_y, kernel_x]
+                damage = damage_kernel_slice[kernel_y, kernel_x]
                 self.damage_events.append({"engager_id": agent_status.id, "target_id": target_agent_id, "damage": damage})
                 self.damage_received[target_agent_id] = self.damage_received.get(target_agent_id, 0) + damage
         return 
@@ -397,7 +401,7 @@ class CTFEnv:
             engager_id = event["engager_id"]
             target_id = event["target_id"]
             damage = event["damage"]
-            #print(f"{engager_id} dealt {damage:.4f} damage to {target_id}")
+            # print(f"{engager_id} dealt {damage:.4f} damage to {target_id}")
             target_status = self.all_agents[target_id].status
             target_type = target_status.agent_type
             target_x, target_y = target_status.x, target_status.y
@@ -405,11 +409,10 @@ class CTFEnv:
             engager_swarm = int(engager_id[0])
             target_swarm = int(target_id[0])
             if engager_swarm == target_swarm:
-                rewards[engager_id] -= damage / max_health * 2.0  # penalty for friendly fire
+                rewards[engager_id] -= damage / max_health * 0.5 # penalty for friendly fire, if too much it discourages attacking at all
             else:
-                rewards[engager_id] += damage / max_health
-            rewards[engager_id] += damage / max_health
-            rewards[target_id] -= damage / max_health
+                rewards[engager_id] += damage / max_health * settings.ENGAGE_REWARD
+            #rewards[target_id] -= damage / max_health * 0.5 # commented out to reduce fear of damage
             msg = FeedbackMessage(None, action_type="engage", details={"engager_id": engager_id, "target_id": target_id, "damage": damage, "target_x": target_x, "target_y": target_y})
             self.swarm1_feedback.append(msg)
             self.swarm2_feedback.append(msg)
@@ -428,10 +431,15 @@ class CTFEnv:
                     continue
                 engager_id = event["engager_id"]
                 fraction = event["damage"] / total_damage
-                rewards[engager_id] += fraction * settings.ELIMINATE_REWARD
+                engager_swarm = int(engager_id[0])
+                target_swarm = int(target_id[0])
+                if engager_swarm == target_swarm:
+                    rewards[engager_id] -= fraction * settings.ELIMINATE_REWARD
+                else:
+                    rewards[engager_id] += fraction * settings.ELIMINATE_REWARD
 
             # full penalty to eliminated agent
-            rewards[target_id] -= settings.ELIMINATE_REWARD
+            rewards[target_id] -= settings.ELIMINATE_REWARD * 0.2
 
             # update overall env state, delete agent
             agent_status = self.all_agents[target_id].status
@@ -492,14 +500,12 @@ class CTFEnv:
                 agent_int = agent_grid_slice[ay, ax]
                 agent_id = self.int_to_agent_id[agent_int]
                 agent_type = self.all_agents[agent_id].status.agent_type
-                swarm_id = int(agent_id[0])
                 # circular radius check
                 wx = slice_x0 + ax
                 wy = slice_y0 + ay
                 dist_sq = (wx - fx)**2 + (wy - fy)**2
                 if dist_sq > capture_radius**2:
                     continue
-                
                 # figure out capture increment from agent type
                 capture_inc = settings.GROUND_FLAG_CAPTURE if agent_type == "ground" else settings.AIR_FLAG_CAPTURE
                 self.flag_events.append({"agent_id": agent_id, "capture_inc": capture_inc, "flag_idx": flag_idx})
@@ -517,49 +523,33 @@ class CTFEnv:
         # also update dispositions of flags
         rewards = defaultdict(float)
         power_dict = self._capture_power()
+        n_agents = self.n_ground_agents + self.n_air_agents
+        pop_scale = 1.0 / max(1, n_agents) # for scaling by number of agents in swarm
         for event in self.flag_events:
             agent_id = event["agent_id"]
             swarm = int(agent_id[0])
             flag_idx = event["flag_idx"]
             flag = self.flags[flag_idx]
             # dont give capture reward if flag already captured by team
-            enemy_swarm = 2 if swarm == 1 else 1
             friendly_power = power_dict[flag_idx][swarm]
-            enemy_power = power_dict[flag_idx][enemy_swarm]
-            contested = enemy_power > 0
             raw_inc = event["capture_inc"]
-            inc = raw_inc / friendly_power * raw_inc
             already_captured = (swarm == 1 and flag.disposition <= -1) or (swarm == 2 and flag.disposition >= 1)
+            # reward scaled by friendly power already at the flag
+            if not already_captured:
+                rewards[agent_id] += settings.FLAG_CAPTURE_REWARD * (raw_inc / friendly_power)
+            #else:
+            #    rewards[agent_id] += settings.FLAG_HOLD_REWARD * 0.5 / friendly_power
 
-            if not already_captured and not contested:
-                rewards[agent_id] += inc
-            elif not already_captured and contested:
-                if friendly_power >= enemy_power:
-                    rewards[agent_id] += inc * 0.3
-                else:
-                    rewards[agent_id] -= inc * 0.5
             # update disposition of flag
             disp_inc = raw_inc if swarm == 2 else -raw_inc
-            flag.disposition += disp_inc
+            flag.disposition = np.clip(flag.disposition + disp_inc, -1.0, 1.0)
             self.environment[flag.y, flag.x, 3] += disp_inc
-            msg = FeedbackMessage(agent_id, action_type="capture", details={"flag_idx": event["flag_idx"], "capture_inc": inc})
+            msg = FeedbackMessage(agent_id, action_type="capture", details={"flag_idx": event["flag_idx"], "capture_inc": raw_inc})
             if swarm == 1:
                 self.swarm1_feedback.append(msg)
             else:
                 self.swarm2_feedback.append(msg)
 
-        for flag_idx, flag in enumerate(self.flags):
-            s1_power = power_dict[flag_idx][1]
-            s2_power = power_dict[flag_idx][2]
-            disposition_delta = s2_power - s1_power
-            if disposition_delta == 0:
-                continue
-            for agent_id in self.all_agents:
-                swarm_id = int(agent_id[0])
-                if swarm_id == 1 and disposition_delta < 0:
-                    rewards[agent_id] -= abs(disposition_delta) * 0.3
-                elif swarm_id == 2 and disposition_delta > 0:
-                    rewards[agent_id] -= abs(disposition_delta) * 0.3
         swarm_1_full_capture = 0
         swarm_2_full_capture = 0
 
@@ -573,31 +563,28 @@ class CTFEnv:
                 self.environment[flag.y, flag.x, 3] = 1
                 swarm_2_full_capture += 1
         
+        # attempt to encourage capturing all flags
+        if swarm_1_full_capture == len(self.flags) and self.swarm_1_prev_full_capture < len(self.flags):
+            for agent_id in self.all_agents:
+                if int(agent_id[0]) == 1:
+                    rewards[agent_id] += (settings.FLAG_CAPTURE_REWARD * 5.0) * pop_scale
+        
+        if swarm_2_full_capture == len(self.flags) and self.swarm_2_prev_full_capture < len(self.flags):
+            for agent_id in self.all_agents:
+                if int(agent_id[0]) == 2:
+                    rewards[agent_id] += (settings.FLAG_CAPTURE_REWARD * 5.0) * pop_scale
+
         delta_swarm_1 = swarm_1_full_capture - self.swarm_1_prev_full_capture
         delta_swarm_2 = swarm_2_full_capture - self.swarm_2_prev_full_capture
-        flag_capture_reward = settings.FLAG_CAPTURE_REWARD
-        flag_hold_reward = settings.FLAG_HOLD_REWARD
+        flag_advantage = swarm_1_full_capture - swarm_2_full_capture
         for agent_id in self.all_agents:
             swarm = int(agent_id[0])
+            capture_val = (delta_swarm_1 - delta_swarm_2) if swarm == 1 else (delta_swarm_2 - delta_swarm_1)
+            rewards[agent_id] += capture_val * settings.FLAG_CAPTURE_REWARD * pop_scale * 3
             if swarm == 1:
-                rewards[agent_id] += (
-                    flag_capture_reward * delta_swarm_1
-                    - flag_capture_reward * delta_swarm_2
-                )
-                rewards[agent_id] += (
-                    flag_hold_reward * swarm_1_full_capture
-                    - flag_hold_reward * swarm_2_full_capture
-                )
+                rewards[agent_id] += flag_advantage * 0.2
             else:
-                rewards[agent_id] += (
-                    flag_capture_reward * delta_swarm_2
-                    - flag_capture_reward * delta_swarm_1
-                )
-                rewards[agent_id] += (
-                    flag_hold_reward * swarm_2_full_capture
-                    - flag_hold_reward * swarm_1_full_capture
-                )
-        
+                rewards[agent_id] -= flag_advantage * 0.2
         self.swarm_1_prev_full_capture = swarm_1_full_capture
         self.swarm_2_prev_full_capture = swarm_2_full_capture
         
@@ -672,26 +659,20 @@ class CTFEnv:
         # keep in mind that all air agents have fixed height (maybe in future will add z-axis control)
         pass
 
-    def _calc_move_reward(self, old_x, old_y, new_x, new_y, swarm):
-        map_diag = np.hypot(self.width, self.height)
-        relevant_flags = []
+    def _calc_move_reward(self, old_x, old_y, new_x, new_y, swarm, agent_type):
+        reward = -0.001  # small step penalty
+
+        enemy_flags = []
         for (fx, fy), flag in zip(self.flag_pos, self.flags):
-            if swarm == "swarm1" and flag.disposition <= -1:
-                continue
-            if swarm == "swarm2" and flag.disposition >= 1:
-                continue
-            relevant_flags.append((fx, fy))
-        if not relevant_flags:
-            return -0.001
-        
-        for fx, fy in relevant_flags:
-            if np.hypot(new_x - fx, new_y - fy) <= settings.FLAG_CAPTURE_RADIUS:
-                return settings.FLAG_HOLD_REWARD + -0.001
-            
-        old_min = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in relevant_flags)
-        new_min = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in relevant_flags)
-        
-        progress_reward = (old_min - new_min) / map_diag * 20
-        step_penalty = -0.001
-        
-        return progress_reward + step_penalty
+            if (swarm == "swarm1" and flag.disposition >= 0) or (swarm == "swarm2" and flag.disposition <= 0):
+                enemy_flags.append((fx, fy))
+
+        if not enemy_flags:
+            return reward
+
+        old_d = min(np.hypot(old_x - fx, old_y - fy) for fx, fy in enemy_flags)
+        new_d = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in enemy_flags)
+
+        reward += (old_d - new_d) * 0.05
+
+        return reward
