@@ -5,7 +5,7 @@ from swarm.core import *
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
 from constants import settings
-from swarm.policy import CentralizedCritic, ActorAgent
+from swarm.policy import CentralizedCritic, FFAgent, RecurrrentAgent
 
 class Swarm:
     """
@@ -14,17 +14,22 @@ class Swarm:
 
     Also makes it easier for the env to step forward.
     """
-    def __init__(self, height, width, n_ground, n_air, swarm_id: int, device="cpu"):
+    def __init__(self, height, width, n_ground, n_air, swarm_id: int, device="cpu", policy_type="ff"):
         self.agents = {}
         self.height = height
         self.width = width
-        self.smart = SMART(height, width, settings.TTL)
         self.rewards = defaultdict(float)
         self.current_tick = 0
         self.swarm_id = swarm_id
+        self.smart = SMART(height, width, settings.TTL)
         self.critic = CentralizedCritic().to(device)
-        self.ground_policy = ActorAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
-        self.air_policy = ActorAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
+        self.policy_type = policy_type
+        if self.policy_type == "ff":
+            self.ground_policy = FFAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
+            self.air_policy = FFAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
+        else:
+            self.ground_policy = RecurrrentAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.GROUND_SPEED).to(device)
+            self.air_policy = RecurrrentAgent(4, 9 + settings.N_FLAGS, 9 + settings.N_FLAGS, 256, 3, 8, settings.AIR_SPEED).to(device)
         self.n_ground_agents = n_ground
         self.n_air_agents = n_air
 
@@ -33,13 +38,13 @@ class Swarm:
             agt_id = f"{self.swarm_id}_ground_{i + 1}"
             agent_type = "ground"
             status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.GROUND_HEALTH) # dummy coords
-            self.agents[agt_id] = GroundAgent(self.swarm_id, status, self.ground_policy, self.smart, device=device)
+            self.agents[agt_id] = GroundAgent(self.swarm_id, status, self.ground_policy, self.smart, device=device, policy_type=self.policy_type)
 
         for i in range(self.n_air_agents):
             agt_id = f"{self.swarm_id}_air_{i + 1}"
             agent_type = "air"
             status = AgentStatus(agt_id, agent_type, 0, 0, 0, settings.AIR_HEALTH) # dummy coords
-            self.agents[agt_id] = AirAgent(self.swarm_id, status, self.air_policy, self.smart, device=device)
+            self.agents[agt_id] = AirAgent(self.swarm_id, status, self.air_policy, self.smart, device=device, policy_type=self.policy_type)
 
     def reset(self, flag_pos, agent_pos):
         self.dones = {agent_id: False for agent_id in self.agents}
@@ -95,7 +100,7 @@ class Swarm:
             env_patch = self.get_env_patch(environment, agent, obs_radius)
             # getting info from SMART
             smart_obs = self.smart.publish(agent)
-            out_actions, comm_out, latent = agent.step(env_patch, smart_obs, self.comms_in[id])
+            out_actions, comm_out, latent, hidden_state = agent.step(env_patch, smart_obs, self.comms_in[id])
             self.obs[id] = agent.obs
             self.raw_preds[id] = agent.raw_preds
             self.latents[id] = latent
@@ -210,3 +215,13 @@ class Swarm:
                     x = msg.details["target_x"],
                     y = msg.details["target_y"]
                 )
+
+
+
+class DeterministicSwarm(Swarm):
+    def __init__(self, strategy, height, width, n_ground, n_air, swarm_id: int, device="cpu"):
+        # derivative fo the base swarm class, for deterministic strategies
+        # possible strategies include distributed, liquid, agentic (LLM controller)
+        super.__init__(height, width, n_ground, n_air, swarm_id, device)
+        self.strategy = strategy
+    

@@ -13,6 +13,7 @@ class Agent:
         self.smart = None
         self.obs = {} # actual tensors
         self.obs_radius = None
+        self.recurrent_state = None
         self.smart_entities = []
     
     def process_env_patch(self, env_patch):
@@ -74,10 +75,7 @@ class Agent:
                 world_x = self.status.x - self.obs_radius + x_patch
                 world_y = self.status.y - self.obs_radius + y_patch
 
-            if entity_type_val in [1, 3]:
-                ent_type = "ground"
-            else:
-                ent_type = "air"
+            ent_type = "ground" if entity_type_val == 3 else "air"
 
             entity_obs.append(
                 EntityObservation(
@@ -223,7 +221,6 @@ class Agent:
         else:
             vec[0] = health / settings.AIR_HEALTH
             vec[2] = 1
-        
         return torch.tensor(vec, dtype=torch.float32).unsqueeze(0)
     
     def process_action_dists(self, action_dists, in_range_mask):
@@ -286,13 +283,17 @@ class Agent:
         self.obs["comms_in"] = comms_tensor.to(self.device)
         self.obs["internal_state"] = internal_state.to(self.device)
 
-        action_dists, comms_out, latent = self.policy(self.obs)
+        if self.policy_type == "ff":
+            action_dists, comms_out, latent = self.policy(self.obs)
+        else:
+            action_dists, comms_out, latent, recurrent_state = self.policy(self.obs, self.recurrent_state)
+            self.recurrent_state = recurrent_state
         action_dists["engage_tgt"] = action_dists["engage_tgt"].masked_fill(~smart_tensors["hostile_in_range"], -1e9)
         self.raw_preds["actions"] = action_dists
         self.raw_preds["comms_out"] = comms_out
         # process the action_dists and output the final action
         move, engage, _ = self.process_action_dists(action_dists, smart_tensors["hostile_in_range"])
-        return (move, engage), comms_out, latent
+        return (move, engage), comms_out, latent, self.recurrent_state
     
     def evaluate(self, stored_obs, stored_action_idx):
         action_dists, _, latent = self.policy(stored_obs)
@@ -313,8 +314,9 @@ class Agent:
     
     def reset(self, new_status):
         self.status = new_status
-    
-class GroundAgent(Agent):
+
+
+class DeterministicAgent(Agent):
     def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu"):
         super().__init__()
         self.swarm_id = swarm_id
@@ -323,9 +325,24 @@ class GroundAgent(Agent):
         self.obs_radius = settings.GROUND_OBS_RADIUS
         self.policy = policy
         self.device = device
+    
+    def step(self, env_patch, smart_obs, comms_in):
+        pass
+
+
+class GroundAgent(Agent):
+    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu", policy_type="ff"):
+        super().__init__()
+        self.swarm_id = swarm_id
+        self.status = status
+        self.smart = smart
+        self.obs_radius = settings.GROUND_OBS_RADIUS
+        self.policy = policy
+        self.device = device
+        self.policy_type = policy_type
 
 class AirAgent(Agent):
-    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu"):
+    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu", policy_type="ff"):
         super().__init__()
         self.swarm_id = swarm_id
         self.status = status
@@ -333,3 +350,4 @@ class AirAgent(Agent):
         self.obs_radius = settings.AIR_OBS_RADIUS
         self.policy = policy
         self.device = device
+        self.policy_type = policy_type

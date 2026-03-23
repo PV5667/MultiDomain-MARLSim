@@ -116,7 +116,7 @@ class PolicyHeads(nn.Module):
         }
     
 
-class ActorAgent(nn.Module):
+class FFAgent(nn.Module):
     def __init__(self, patch_in_channels, entity_dim, event_dim, comm_dim, state_dim, n_directions, motion_range):
         super().__init__()
         self.patch_enc = PatchEncoder(patch_in_channels, embed_dim=128)
@@ -153,7 +153,55 @@ class ActorAgent(nn.Module):
         comms_out = self.comms_out(fused)
         action_dists = self.heads(fused, entity_embs)
         return action_dists, comms_out, fused
-    
+
+class RecurrrentAgent(nn.Module):
+    def __init__(self, patch_in_channels, entity_dim, event_dim, comm_dim, state_dim, n_directions, motion_range):
+        """
+        Same as the FFAgent except added recurrent state between timesteps.
+        """
+        super().__init__()
+        self.patch_enc = PatchEncoder(patch_in_channels, embed_dim=128)
+        self.entity_gnn = ContextGNN(entity_dim, embed_dim=128)
+        self.event_gnn = ContextGNN(event_dim, embed_dim=64)
+        self.comms_in = StateMLP(comm_dim, embed_dim=64)
+        self.state_mlp = StateMLP(state_dim, embed_dim=64)
+        self.recurrent_lstm = nn.LSTMCell(256, 256)
+
+        fused_dim = 128 + 128 + 64 + 64 + 64
+        
+        self.fusion = nn.Sequential(
+            nn.Linear(fused_dim, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.ReLU()
+        )
+        self.comms_out = nn.Sequential(
+            nn.Linear(256, comm_dim),
+            nn.Tanh()
+        )
+        self.heads = PolicyHeads(256, entity_emb_dim=128, n_directions=n_directions, motion_range=motion_range)
+
+    def forward(self, obs, recurrent_state=None):
+        patch_emb = self.patch_enc(obs["patch"])
+        entity_embs, entity_glob_emb = self.entity_gnn(obs["entities"], obs["entity_mask"])
+        _, event_emb = self.event_gnn(obs["events"], obs["event_mask"])
+        state_emb = self.state_mlp(obs["internal_state"])
+        comms_emb = self.comms_in(obs["comms_in"])
+        fused = torch.cat([patch_emb, entity_glob_emb, event_emb, state_emb, comms_emb], dim=-1)
+        fused = self.fusion(fused)
+        if recurrent_state is None:
+            h = torch.zeros(fused.size(0), 256, device=fused.device)
+            c = torch.zeros(fused.size(0), 256, device=fused.device)
+        else:
+            h, c = recurrent_state
+        # pass the hidden state into the lstm cell
+        h, c = self.recurrent_lstm(fused, (h, c))
+
+        comms_out = self.comms_out(h)
+        action_dists = self.heads(h, entity_embs)
+        return action_dists, comms_out, h, (h, c)
 
 class CentralizedCritic(nn.Module):
     def __init__(self, agent_emb_dim=256, n_heads=4, n_layers=2):

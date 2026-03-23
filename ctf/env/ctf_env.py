@@ -247,7 +247,7 @@ class CTFEnv:
             agent_int = self.agent_id_to_int[id]
             self.agent_grid[y, x] = agent_int
         # add the initial environment to the history (for rendering later)
-        self.history.append(self.environment.copy())
+        self.history.append((self.environment.copy(), []))
 
     def reset(self):
         np.random.seed()
@@ -664,7 +664,7 @@ class CTFEnv:
         self.update(actions)
 
         # add updated environment to history!
-        self.history.append(self.environment.copy())
+        self.history.append((self.environment.copy(), self.damage_events))
         return
 
     def render(self):
