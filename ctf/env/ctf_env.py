@@ -377,9 +377,7 @@ class CTFEnv:
             for ay, ax in zip(ys, xs):
                 target_agent_int = agent_grid_slice[ay, ax]
                 target_agent_id = self.int_to_agent_id[target_agent_int]
-                kernel_y = kernel_y0 + ay
-                kernel_x = kernel_x0 + ax
-                damage = damage_kernel_slice[kernel_y, kernel_x]
+                damage = damage_kernel_slice[ay, ax]
                 self.damage_events.append({"engager_id": agent_status.id, "target_id": target_agent_id, "damage": damage})
                 self.damage_received[target_agent_id] = self.damage_received.get(target_agent_id, 0) + damage
         return 
@@ -401,7 +399,7 @@ class CTFEnv:
             engager_id = event["engager_id"]
             target_id = event["target_id"]
             damage = event["damage"]
-            # print(f"{engager_id} dealt {damage:.4f} damage to {target_id}")
+            #print(f"{engager_id} dealt {damage:.4f} damage to {target_id}")
             target_status = self.all_agents[target_id].status
             target_type = target_status.agent_type
             target_x, target_y = target_status.x, target_status.y
@@ -537,8 +535,8 @@ class CTFEnv:
             # reward scaled by friendly power already at the flag
             if not already_captured:
                 rewards[agent_id] += settings.FLAG_CAPTURE_REWARD * (raw_inc / friendly_power)
-            #else:
-            #    rewards[agent_id] += settings.FLAG_HOLD_REWARD * 0.5 / friendly_power
+            else:
+                rewards[agent_id] += settings.FLAG_HOLD_REWARD * 0.5 / friendly_power
 
             # update disposition of flag
             disp_inc = raw_inc if swarm == 2 else -raw_inc
@@ -588,6 +586,21 @@ class CTFEnv:
         self.swarm_1_prev_full_capture = swarm_1_full_capture
         self.swarm_2_prev_full_capture = swarm_2_full_capture
         
+        for flag_idx, flag in enumerate(self.flags):
+            holding_swarm = 0
+            if flag.disposition <= -0.5:
+                holding_swarm = 1
+            elif flag.disposition >= 0.5:
+                holding_swarm = 2        
+            enemy_power = power_dict[flag_idx][1] if holding_swarm == 2 else power_dict[flag_idx][2]
+            if enemy_power > 0:
+                for event in self.flag_events:
+                    if event["flag_idx"] != flag_idx:
+                        continue
+                    agent_id = event["agent_id"]
+                    if int(agent_id[0]) != holding_swarm:
+                        continue
+                    rewards[agent_id] -= enemy_power * settings.FLAG_CAPTURE_REWARD * 0.25
         for id in rewards:
             swarm = int(id[0])
             if rewards[id] != 0:
@@ -674,5 +687,4 @@ class CTFEnv:
         new_d = min(np.hypot(new_x - fx, new_y - fy) for fx, fy in enemy_flags)
 
         reward += (old_d - new_d) * 0.05
-
         return reward
