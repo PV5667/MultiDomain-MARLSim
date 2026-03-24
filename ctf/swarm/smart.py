@@ -40,10 +40,9 @@ class SMART:
         self.foreign_id_to_int = {}
         self.foreign_int_to_id = {}
 
-    def publish(self, agent: Agent):
+    def publish(self, agent_status: AgentStatus):
         # basically look at the position of the agent, along with tick, and output info accordingly
         obs = {} # consists of events and entities
-        agent_status = agent.status
         x, y = agent_status.x, agent_status.y
         # spatial index: all entities within 200x200 block
         x0 = max(0, x - self.relevance_radius)
@@ -131,9 +130,10 @@ class SMART:
         entity.x = entity_obs.x
         entity.y = entity_obs.y
         entity.z = entity_obs.z
-        prev_val = self.foreign_grid[old_y, old_x]
-        self.foreign_grid[entity.y, entity.x] = prev_val
+        entity.health = entity_obs.health
+        id_int = self.foreign_id_to_int[entity.id]
         self.foreign_grid[old_y, old_x] = -1
+        self.foreign_grid[entity.y, entity.x] = id_int 
     
     def _add_foreign_entity(self, entity_obs: EntityObservation):
         new_id = ""

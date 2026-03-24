@@ -356,8 +356,14 @@ class CTFEnv:
         if success:
             damage_kernel = damage_kernel * nominal_damage
             # add damage kernel to damage map at target position
-            target_x = action.target_x
-            target_y = action.target_y
+            aimed_x = action.target_x
+            aimed_y = action.target_y
+            target_int = self.prev_agent_grid[aimed_y, aimed_x] # int id of targetted agent
+            if target_int in self.eliminated_agents:
+                return
+            target_agent_id = self.int_to_agent_id[target_int]
+            target_status = self.all_agents[target_agent_id].status
+            """
             k_size = damage_kernel.shape[0]
             limit = k_size // 2
             x0 = max(0, target_x - limit)
@@ -368,7 +374,6 @@ class CTFEnv:
             kernel_y0 = limit - (target_y - y0)
             kernel_x1 = kernel_x0 + (x1 - x0)
             kernel_y1 = kernel_y0 + (y1 - y0)
-
             # find if there are any agents in the damage kernel, search the agent grid (friendly fire on)
             agent_grid_slice = self.agent_grid[y0:y1, x0:x1]
             damage_kernel_slice = damage_kernel[kernel_y0:kernel_y1, kernel_x0:kernel_x1]
@@ -378,8 +383,17 @@ class CTFEnv:
                 target_agent_int = agent_grid_slice[ay, ax]
                 target_agent_id = self.int_to_agent_id[target_agent_int]
                 damage = damage_kernel_slice[ay, ax]
-                self.damage_events.append({"engager_id": agent_status.id, "target_id": target_agent_id, "damage": damage})
+                self.damage_events.append({"engager_id": agent_status.id, "target_id": target_agent_id, "damage": damage, "target_x": target_x, "target_y": target_y})
                 self.damage_received[target_agent_id] = self.damage_received.get(target_agent_id, 0) + damage
+            """
+            self.damage_events.append({
+                "engager_id": agent_status.id,
+                "target_id": target_agent_id,
+                "damage": nominal_damage,
+                "target_x": target_status.x,
+                "target_y": target_status.y
+            })
+            self.damage_received[target_agent_id] = self.damage_received.get(target_agent_id, 0) + nominal_damage
         return 
     
     def _damage_update(self):
@@ -660,7 +674,7 @@ class CTFEnv:
         self.flag_events = []
         self.swarm1_feedback = []
         self.swarm2_feedback = []
-    
+        self.prev_agent_grid = self.agent_grid.copy()
         self.update(actions)
 
         # add updated environment to history!

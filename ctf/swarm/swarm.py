@@ -1,7 +1,8 @@
 import numpy as np
 from swarm.smart import SMART, Entity, FlagEntity, Disposition, Event, EventType
-from swarm.agent import GroundAgent, AirAgent
+from swarm.agent import GroundAgent, AirAgent, DeterministicGroundAgent, DeterministicAirAgent
 from swarm.core import *
+from swarm.actions import *
 from env.feedback_message import FeedbackMessage
 from collections import defaultdict
 from constants import settings
@@ -99,8 +100,7 @@ class Swarm:
             # calculating indices and slicing -- should be centered at agent pos
             env_patch = self.get_env_patch(environment, agent, obs_radius)
             # getting info from SMART
-            smart_obs = self.smart.publish(agent)
-            out_actions, comm_out, latent, hidden_state = agent.step(env_patch, smart_obs, self.comms_in[id])
+            out_actions, comm_out, latent, hidden_state = agent.step(env_patch, self.comms_in[id])
             self.obs[id] = agent.obs
             self.raw_preds[id] = agent.raw_preds
             self.latents[id] = latent
@@ -220,8 +220,129 @@ class Swarm:
 
 class DeterministicSwarm(Swarm):
     def __init__(self, strategy, height, width, n_ground, n_air, swarm_id: int, device="cpu"):
-        # derivative fo the base swarm class, for deterministic strategies
-        # possible strategies include distributed, liquid, agentic (LLM controller)
-        super.__init__(height, width, n_ground, n_air, swarm_id, device)
+        super().__init__(height, width, n_ground, n_air, swarm_id, device)
         self.strategy = strategy
-    
+        del self.critic
+        del self.ground_policy
+        del self.air_policy
+        self.agents = {}
+        for i in range(self.n_ground_agents):
+            agt_id = f"{self.swarm_id}_ground_{i + 1}"
+            status = AgentStatus(agt_id, "ground", 0, 0, 0, settings.GROUND_HEALTH)
+            self.agents[agt_id] = DeterministicGroundAgent(self.swarm_id, status, self.smart, device=device)
+
+        for i in range(self.n_air_agents):
+            agt_id = f"{self.swarm_id}_air_{i + 1}"
+            status = AgentStatus(agt_id, "air", 0, 0, 0, settings.AIR_HEALTH)
+            self.agents[agt_id] = DeterministicAirAgent(self.swarm_id, status, self.smart, device=device)
+
+    def reset(self, flag_pos, agent_pos):
+        super().reset(flag_pos, agent_pos)
+        flag_ids = [f"flag_{i}" for i in range(len(flag_pos))]
+        active_list = sorted(self.active_agents)
+        n_agents = len(active_list)
+
+        if self.strategy == "distributed":
+            # assign agents to flags as evenly as possible
+            self.agent_flag_assignment = {}
+            for i, agt_id in enumerate(active_list):
+                assigned_flag = flag_ids[i % len(flag_ids)]
+                self.agent_flag_assignment[agt_id] = assigned_flag
+        elif self.strategy == "liquid":
+            # all agents start assigned to first flag
+            self.flag_order = flag_ids # will remove flags as they're captured
+            self.current_target_flag = self.flag_order[0]
+            self.agent_flag_assignment = {agt_id: self.current_target_flag for agt_id in active_list}
+            self.movable = self.active_agents.copy()
+            self.captured_flags = set()
+            self.contingent_size = max(1, n_agents // len(flag_ids))
+        self.patrolling = set()
+
+    def step(self, environment):
+        self.rewards = defaultdict(float)
+        actions = []
+
+        if self.strategy == "liquid":
+            self._update_liquid_assignments()
+
+        for agt_id in sorted(self.active_agents):
+            agent = self.agents[agt_id]
+            obs_radius = agent.obs_radius
+            env_patch = self.get_env_patch(environment, agent, obs_radius)
+            smart_tensors, smart_entities = agent.step(env_patch)
+            hostile_in_range = smart_tensors["hostile_in_range"].squeeze()
+            agent_actions = []
+
+            if hostile_in_range.any():
+                tgt_idx = hostile_in_range.nonzero(as_tuple=True)[0][0].item()
+                target_entity = smart_entities[tgt_idx]
+                agent_actions.append(EngageAction(
+                    agent.status,
+                    target_x=target_entity.x,
+                    target_y=target_entity.y
+                ))
+
+            assigned_flag_id = self.agent_flag_assignment.get(agt_id)
+            flag = self.smart.known_entities[assigned_flag_id]
+            flag_x, flag_y = flag.x, flag.y
+            ax, ay = agent.status.x, agent.status.y
+            dist = ((ax - flag_x) ** 2 + (ay - flag_y) ** 2) ** 0.5
+            capture_radius = settings.FLAG_CAPTURE_RADIUS
+
+            if agt_id in self.patrolling or dist <= capture_radius:
+                self.patrolling.add(agt_id)
+                angle = np.random.uniform(0, 2 * np.pi)
+                patrol_dx = int(round(np.cos(angle) * (capture_radius * 0.5)))
+                patrol_dy = int(round(np.sin(angle) * (capture_radius * 0.5)))
+                tx = np.clip(flag_x + patrol_dx, 0, self.width - 1)
+                ty = np.clip(flag_y + patrol_dy, 0, self.height - 1)
+                direction, magnitude = self._dir_mag_to(ax, ay, tx, ty, agent)
+            else:
+                direction, magnitude = self._dir_mag_to(ax, ay, flag_x, flag_y, agent)
+
+            agent_actions.append(MoveAction(agent.status, direction=direction, magnitude=magnitude))
+            actions.extend(agent_actions)
+        self.current_tick += 1
+        self.smart.step()
+        return actions
+
+    def _update_liquid_assignments(self):
+        # check if current target flag is captured. if so, leave a contigent and move on
+        if not self.flag_order:
+            return
+        current_flag_id = self.flag_order[0]
+        flag = self.smart.known_entities[current_flag_id]
+        flag_disp = flag.disposition
+        owned = flag_disp > 0.5 # flag disp is normalized at time of adding to smart
+        if owned and current_flag_id not in self.captured_flags:
+            self.captured_flags.add(current_flag_id)
+            self.flag_order.pop(0)
+            if not self.flag_order: # no next flag
+                return
+            next_flag = self.flag_order[0]
+            def dist_to_flag(agt_id):
+                s = self.agents[agt_id].status
+                return (s.x - flag.x) ** 2 + (s.y - flag.y) ** 2
+            moving_agts = sorted(self.movable, key=dist_to_flag)
+            staying = set(moving_agts[:self.contingent_size])
+            moving = moving_agts[self.contingent_size:]
+            for agt_id in moving:
+                self.agent_flag_assignment[agt_id] = next_flag
+                self.patrolling.discard(agt_id)
+            for agt_id in staying:
+                self.agent_flag_assignment[agt_id] = current_flag_id
+                self.movable.discard(agt_id)
+    def _dir_mag_to(self, ax, ay, tx, ty, agent):
+        dx = tx - ax
+        dy = ty - ay
+        if self.swarm_id == 1:
+            dx = -dx
+            dy = -dy
+        if dx == 0 and dy == 0:
+            return Direction.NORTH, 0
+        angle = np.arctan2(dy, dx)
+        idx = int((angle + np.pi) / (2 * np.pi) * 8 + 0.5) % 8
+        direction = Direction(idx + 1)
+        speed = settings.AIR_SPEED if isinstance(agent, AirAgent) else settings.GROUND_SPEED
+        magnitude = min(int((dx**2 + dy**2)**0.5), speed)
+        return direction, magnitude

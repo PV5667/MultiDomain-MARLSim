@@ -143,7 +143,7 @@ class Agent:
             if isinstance(ent, Entity):
                 is_enemy = ent.disposition.name != "FRIENDLY"
                 dist_sq = (ent.x - agent_x) ** 2 + (ent.y - agent_y) ** 2
-                in_range = is_enemy and dist_sq <= self.obs_radius ** 2
+                in_range = is_enemy and dist_sq <= self.obs_radius ** 2 and ent.last_seen_tick == self.smart.current_tick
                 hostile_in_range.append(in_range)
             else:
                 hostile_in_range.append(False)
@@ -156,6 +156,7 @@ class Agent:
         entity_vectors = entity_vectors[:MAX_ENTITIES]
         entity_mask = entity_mask[:MAX_ENTITIES]
         hostile_in_range = hostile_in_range[:MAX_ENTITIES]
+        self.smart_entities = all_entities[:MAX_ENTITIES]
 
         while len(entity_vectors) < MAX_ENTITIES:
             entity_vectors.append([0.0] * PAD_LEN)
@@ -256,7 +257,7 @@ class Agent:
                 )
         return move_action, engage_action, tgt_idx
     
-    def step(self, env_patch, smart_obs, comms_in):
+    def step(self, env_patch, comms_in):
         self.obs = {}
         self.raw_preds = {}
         self.smart_entities = []
@@ -267,6 +268,7 @@ class Agent:
         for obs in entity_obs_list:
             self.smart.add_entity_observation(obs)
         self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
+        smart_obs = self.smart.publish(self.status)
         smart_tensors = self.process_smart_obs(smart_obs)
         internal_state = self._internal_state_vec()
         if len(comms_in) > 0:
@@ -315,21 +317,6 @@ class Agent:
     def reset(self, new_status):
         self.status = new_status
 
-
-class DeterministicAgent(Agent):
-    def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu"):
-        super().__init__()
-        self.swarm_id = swarm_id
-        self.status = status
-        self.smart = smart
-        self.obs_radius = settings.GROUND_OBS_RADIUS
-        self.policy = policy
-        self.device = device
-    
-    def step(self, env_patch, smart_obs, comms_in):
-        pass
-
-
 class GroundAgent(Agent):
     def __init__(self, swarm_id, status: AgentStatus, policy, smart, device="cpu", policy_type="ff"):
         super().__init__()
@@ -351,3 +338,39 @@ class AirAgent(Agent):
         self.policy = policy
         self.device = device
         self.policy_type = policy_type
+
+class DeterministicAgent(Agent):
+    def __init__(self):
+        super().__init__()
+        # used mainly for obs processing (control rests at swarm level)
+    def step(self, env_patch):
+        # swarm-level controller just needs to know hostile_in_range and position of agent
+        self.obs = {}
+        self.raw_preds = {}
+        self.smart_entities = []
+        # env_patch is localized to the fixed area around the agent (patching done during swarm.step())
+        env_patch = self.process_env_patch(env_patch)
+        entity_obs_list = self.report_entity_obs(env_patch)
+        for obs in entity_obs_list:
+            self.smart.add_entity_observation(obs)
+        self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
+        smart_obs = self.smart.publish(self.status)
+        smart_tensors = self.process_smart_obs(smart_obs)
+        return smart_tensors, self.smart_entities
+    
+class DeterministicGroundAgent(DeterministicAgent):
+    def __init__(self, swarm_id, status: AgentStatus, smart, device="cpu"):
+        self.swarm_id = swarm_id
+        self.status = status
+        self.smart = smart
+        self.obs_radius = settings.GROUND_OBS_RADIUS
+        self.device = device
+
+class DeterministicAirAgent(DeterministicAgent):
+    def __init__(self, swarm_id, status: AgentStatus, smart, device="cpu"):
+        self.swarm_id = swarm_id
+        self.status = status
+        self.smart = smart
+        self.obs_radius = settings.AIR_OBS_RADIUS
+        self.device = device
+    
