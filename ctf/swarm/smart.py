@@ -3,6 +3,8 @@ from swarm.agent import Agent
 from env.flag import Flag
 from constants import settings
 from swarm.core import *
+from scipy.optimize import linear_sum_assignment
+
 
 class SMART:
     """
@@ -87,30 +89,58 @@ class SMART:
                     relevant.append(event)
         return relevant
     
-    def add_entity_observation(self, observation: EntityObservation):
-        candidate = self._find_matching_entity(observation)
-        if candidate:
-            # update candidates position
-            self._update_foreign_entity(candidate, observation)
-        else:
-            self._add_foreign_entity(observation)
+    def add_entity_observations(self, observations: list[EntityObservation]):
+        matches = self._find_matching_entities(observations)
+        for obs, entity in matches:
+            if entity is not None:
+                self._update_foreign_entity(entity, obs)
+            else:
+                self._add_foreign_entity(obs)
 
-    def _find_matching_entity(self, observation: EntityObservation):
-        match_radius = settings.GROUND_SPEED if observation.type == "ground" else settings.AIR_SPEED
-        closest_entity = None
-        closest_dist_sq = match_radius * match_radius
+    def _find_matching_entities(self, observations: list[EntityObservation]):
+        # Hungarian algorithm + entities last seen this tick can't be match candidates
+        results = []
+        all_entities = list(self.foreign_entities.values())
+        for obs_type in ("ground", "air"):
+            obs_group = [o for o in observations if o.type == obs_type]
+            ent_group = [e for e in all_entities if e.type == obs_type]
 
-        for entity in self.foreign_entities.values():
-            if entity.type != observation.type:
+            if not obs_group:
                 continue
-            dx = entity.x - observation.x
-            dy = entity.y - observation.y
-            dist_sq = dx * dx + dy * dy
+            if not ent_group:
+                results.extend((o, None) for o in obs_group)
+                continue
 
-            if dist_sq < closest_dist_sq:
-                closest_dist_sq = dist_sq
-                closest_entity = entity
-        return closest_entity
+            match_radius = settings.GROUND_SPEED if obs_type == "ground" else settings.AIR_SPEED
+
+            obs_coords = np.array([[o.x, o.y] for o in obs_group])
+            ent_coords = np.array([[e.x, e.y] for e in ent_group])
+            # numpy broadcasting to create (n, m, 2) array from (n, 1, 2) and (m, 1, 2) arrays
+            diff = obs_coords[:, np.newaxis, :] - ent_coords[np.newaxis, :, :]
+            # then taking norm along axis 2, creating (n,m) matrix of dists
+            dist_matrix = np.linalg.norm(diff, axis=2)
+
+            seen_this_tick = np.array([
+                e.last_seen_tick == self.current_tick for e in ent_group
+            ], dtype=bool)
+            within_radius = dist_matrix <= match_radius
+            exact_match   = dist_matrix < 1e-6
+
+            # if seen this tick, only True if exact match. else only True if within radius
+            within_radius = np.where(seen_this_tick[np.newaxis, :], exact_match, within_radius)
+            # 1e6 is enough of a "large distance" for our map scale
+            cost_for_solver = np.where(within_radius, dist_matrix, 1e6)
+            
+            row_indices, col_indices = linear_sum_assignment(cost_for_solver)
+            matched_obs_idx = set()
+            for r, c in zip(row_indices, col_indices):
+                if within_radius[r, c]:
+                    results.append((obs_group[r], ent_group[c]))
+                    matched_obs_idx.add(r)
+            for i, obs in enumerate(obs_group):
+                if i not in matched_obs_idx:
+                    results.append((obs, None))
+        return results
     
     def update_known_entity_pos(self, entity_id, new_x, new_y):
         entity = self.known_entities[entity_id]

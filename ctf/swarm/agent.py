@@ -162,6 +162,7 @@ class Agent:
             entity_vectors.append([0.0] * PAD_LEN)
             entity_mask.append(True)
             hostile_in_range.append(False)
+            self.smart_entities.append(None)
 
         entity_tensor = torch.tensor(entity_vectors, dtype=torch.float32)
         entity_mask = torch.tensor(entity_mask, dtype=torch.bool)
@@ -265,8 +266,8 @@ class Agent:
         env_patch = self.process_env_patch(env_patch)
         entity_obs_list = self.report_entity_obs(env_patch)
         patch = self.to_tensor(env_patch)
-        for obs in entity_obs_list:
-            self.smart.add_entity_observation(obs)
+        if len(entity_obs_list) > 0:
+            self.smart.add_entity_observations(entity_obs_list)
         self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
         smart_obs = self.smart.publish(self.status)
         smart_tensors = self.process_smart_obs(smart_obs)
@@ -284,12 +285,19 @@ class Agent:
         self.obs["hostile_in_range"] = smart_tensors["hostile_in_range"].to(self.device)
         self.obs["comms_in"] = comms_tensor.to(self.device)
         self.obs["internal_state"] = internal_state.to(self.device)
+        if self.recurrent_state is not None:
+            self.obs["h"] = self.recurrent_state[0].to(self.device)
+            self.obs["c"] = self.recurrent_state[1].to(self.device)
+        else:
+            self.obs["h"] = torch.zeros(comms_tensor.size(0), 256, device=comms_tensor.device)
+            self.obs["c"] = torch.zeros(comms_tensor.size(0), 256, device=comms_tensor.device)
 
         if self.policy_type == "ff":
             action_dists, comms_out, latent = self.policy(self.obs)
         else:
             action_dists, comms_out, latent, recurrent_state = self.policy(self.obs, self.recurrent_state)
-            self.recurrent_state = recurrent_state
+            h, c = recurrent_state
+            self.recurrent_state = (h.detach(), c.detach())
         action_dists["engage_tgt"] = action_dists["engage_tgt"].masked_fill(~smart_tensors["hostile_in_range"], -1e9)
         self.raw_preds["actions"] = action_dists
         self.raw_preds["comms_out"] = comms_out
@@ -351,8 +359,8 @@ class DeterministicAgent(Agent):
         # env_patch is localized to the fixed area around the agent (patching done during swarm.step())
         env_patch = self.process_env_patch(env_patch)
         entity_obs_list = self.report_entity_obs(env_patch)
-        for obs in entity_obs_list:
-            self.smart.add_entity_observation(obs)
+        if len(entity_obs_list) > 0:
+            self.smart.add_entity_observations(entity_obs_list)
         self.smart.update_known_entity_pos(self.status.id, self.status.x, self.status.y)
         smart_obs = self.smart.publish(self.status)
         smart_tensors = self.process_smart_obs(smart_obs)

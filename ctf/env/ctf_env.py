@@ -253,6 +253,7 @@ class CTFEnv:
         np.random.seed()
         self.history = []
         self.flags = []
+        self.environment = np.zeros((self.height, self.width, self.channels))
         self.init_env_terrain()
         self.swarm_1_prev_full_capture = 0
         self.swarm_2_prev_full_capture = 0
@@ -359,8 +360,9 @@ class CTFEnv:
             aimed_x = action.target_x
             aimed_y = action.target_y
             target_int = self.prev_agent_grid[aimed_y, aimed_x] # int id of targetted agent
-            if target_int in self.eliminated_agents:
-                return
+            #if target_int == -1:
+            #    print(f"Miss at {aimed_x, aimed_y} by engager {agent_status.id}")
+            #    return
             target_agent_id = self.int_to_agent_id[target_int]
             target_status = self.all_agents[target_agent_id].status
             """
@@ -550,7 +552,7 @@ class CTFEnv:
             if not already_captured:
                 rewards[agent_id] += settings.FLAG_CAPTURE_REWARD * (raw_inc / friendly_power)
             else:
-                rewards[agent_id] += settings.FLAG_HOLD_REWARD * 0.5 / friendly_power
+                rewards[agent_id] += settings.FLAG_HOLD_REWARD / friendly_power
 
             # update disposition of flag
             disp_inc = raw_inc if swarm == 2 else -raw_inc
@@ -691,7 +693,7 @@ class CTFEnv:
 
         enemy_flags = []
         for (fx, fy), flag in zip(self.flag_pos, self.flags):
-            if (swarm == "swarm1" and flag.disposition >= 0) or (swarm == "swarm2" and flag.disposition <= 0):
+            if (swarm == "swarm1" and flag.disposition > -1) or (swarm == "swarm2" and flag.disposition < 1):
                 enemy_flags.append((fx, fy))
 
         if not enemy_flags:

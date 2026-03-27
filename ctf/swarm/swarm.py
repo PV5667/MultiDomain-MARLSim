@@ -1,3 +1,4 @@
+import random
 import numpy as np
 from swarm.smart import SMART, Entity, FlagEntity, Disposition, Event, EventType
 from swarm.agent import GroundAgent, AirAgent, DeterministicGroundAgent, DeterministicAirAgent
@@ -103,13 +104,13 @@ class Swarm:
             out_actions, comm_out, latent, hidden_state = agent.step(env_patch, self.comms_in[id])
             self.obs[id] = agent.obs
             self.raw_preds[id] = agent.raw_preds
-            self.latents[id] = latent
+            self.latents[id] = latent.detach()
             for i in out_actions:
                 if i is not None:
                     actions.append(i)
 
             if comm_out is not None:
-                next_comms.append((id, comm_out))
+                next_comms.append((id, comm_out.detach()))
 
         self.comms = next_comms
         self.current_tick += 1
@@ -221,6 +222,8 @@ class Swarm:
 class DeterministicSwarm(Swarm):
     def __init__(self, strategy, height, width, n_ground, n_air, swarm_id: int, device="cpu"):
         super().__init__(height, width, n_ground, n_air, swarm_id, device)
+        # current strategies: liquid, distributed, passive, forward
+        # future implementation with LLM control is possible -- can pass in each agent's state, relative position to flags, nearby entities
         self.strategy = strategy
         del self.critic
         del self.ground_policy
@@ -241,16 +244,59 @@ class DeterministicSwarm(Swarm):
         flag_ids = [f"flag_{i}" for i in range(len(flag_pos))]
         active_list = sorted(self.active_agents)
         n_agents = len(active_list)
-
         if self.strategy == "distributed":
-            # assign agents to flags as evenly as possible
+            # assign agents to flags as evenly as possible, also based on closest flag
+            n_flags = len(flag_ids)
+            base = n_agents // n_flags
+            remainder = n_agents % n_flags
+            slots = {fid: base + (1 if i < remainder else 0) for i, fid in enumerate(flag_ids)}
             self.agent_flag_assignment = {}
-            for i, agt_id in enumerate(active_list):
-                assigned_flag = flag_ids[i % len(flag_ids)]
-                self.agent_flag_assignment[agt_id] = assigned_flag
+            unassigned = list(active_list)
+            candidates = []
+            for agt_id in unassigned:
+                s = self.agents[agt_id].status
+                for fid in flag_ids:
+                    fx, fy = self.smart.known_entities[fid].x, self.smart.known_entities[fid].y
+                    dist_sq = (s.x - fx) ** 2 + (s.y - fy) ** 2
+                    candidates.append((dist_sq, agt_id, fid))
+            candidates.sort()
+
+            for _, agt_id, fid in candidates:
+                if agt_id in self.agent_flag_assignment:
+                    continue
+                if slots[fid] <= 0:
+                    continue
+                self.agent_flag_assignment[agt_id] = fid
+                slots[fid] -= 1
+
+            for agt_id in active_list:
+                if agt_id not in self.agent_flag_assignment:
+                    # gets fid with max slot
+                    fid = max(slots, key=slots.get)
+                    self.agent_flag_assignment[agt_id] = fid
+                    slots[fid] -= 1
         elif self.strategy == "liquid":
-            # all agents start assigned to first flag
-            self.flag_order = flag_ids # will remove flags as they're captured
+            # calculating path between flags
+            positions = [(self.agents[aid].status.x, self.agents[aid].status.y)
+                     for aid in active_list]
+            # centroid coords of swarm
+            cx = sum(p[0] for p in positions) / len(positions)
+            cy = sum(p[1] for p in positions) / len(positions)
+            
+            remaining = list(flag_ids)
+            ordered   = []
+            cur_x, cur_y = cx, cy
+            while remaining:
+                dists = {}
+                for fid in remaining:
+                    dists[fid] = (self.smart.known_entities[fid].x - cur_x) ** 2 + (self.smart.known_entities[fid].y - cur_y) ** 2
+                # closest other flag to the "current" flag
+                closest = min(dists, key=dists.get)
+                ordered.append(closest)
+                remaining.remove(closest)
+                cur_x = self.smart.known_entities[closest].x
+                cur_y = self.smart.known_entities[closest].y
+            self.flag_order = ordered
             self.current_target_flag = self.flag_order[0]
             self.agent_flag_assignment = {agt_id: self.current_target_flag for agt_id in active_list}
             self.movable = self.active_agents.copy()
@@ -259,9 +305,25 @@ class DeterministicSwarm(Swarm):
         self.patrolling = set()
 
     def step(self, environment):
+        self.smart_entities_obs = {}
         self.rewards = defaultdict(float)
         actions = []
 
+        if self.strategy == "passive":
+            # stay in place
+            self.current_tick += 1
+            self.smart.step()
+            return actions
+        if self.strategy == "forward":
+            # just move forward (no engage)
+            actions = []
+            for agt_id in sorted(self.active_agents):
+                agent = self.agents[agt_id]
+                actions.append(MoveAction(agent.status, direction=Direction.NORTH, magnitude=random.randint(10, 30)))
+            self.current_tick += 1
+            self.smart.step()
+            return actions
+        
         if self.strategy == "liquid":
             self._update_liquid_assignments()
 
@@ -270,6 +332,7 @@ class DeterministicSwarm(Swarm):
             obs_radius = agent.obs_radius
             env_patch = self.get_env_patch(environment, agent, obs_radius)
             smart_tensors, smart_entities = agent.step(env_patch)
+            self.smart_entities_obs[agt_id] = smart_entities
             hostile_in_range = smart_tensors["hostile_in_range"].squeeze()
             agent_actions = []
 
@@ -281,7 +344,6 @@ class DeterministicSwarm(Swarm):
                     target_x=target_entity.x,
                     target_y=target_entity.y
                 ))
-
             assigned_flag_id = self.agent_flag_assignment.get(agt_id)
             flag = self.smart.known_entities[assigned_flag_id]
             flag_x, flag_y = flag.x, flag.y
