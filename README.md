@@ -8,5 +8,5 @@ A high-level overview can be found here: [report.pdf](report.pdf). Demo videos c
 - [ ] Release RL baseline demos + training code
 
 <video width="70%" controls>
-  <source src="demos/distributed_forward.mp4" type="video/mp4">
+  <source src="./demos/distributed_forward.mp4" type="video/mp4">
 </video>
